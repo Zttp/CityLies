@@ -240,9 +240,6 @@ KingCheckTimer.OnTimer.Add(function(t) {
 Ui.GetContext().TeamProp1.Value = { Team: "BlueKingdom", Prop: "Scores" };
 Ui.GetContext().TeamProp2.Value = { Team: "RedKingdom", Prop: "Scores" };
 
-// Старт таймеров
-KingCheckTimer.RestartLoop(30);
-
 Chat.OnMessage.Add(function(m) {
     let mt = m.Text.toLowerCase().trim();
     let sender = Players.GetByRoomId(m.Sender);
