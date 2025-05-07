@@ -1,344 +1,394 @@
 import { DisplayValueHeader, Color, Vector3 } from 'pixel_combats/basic';
-import { Game, Map, Players, Teams, Damage, Ui, Properties, Spawns, Timers, Chat } from 'pixel_combats/room';
+import { Game, Players, Teams, Damage, Ui, Properties, Spawns, Timers, Chat, LeaderBoard } from 'pixel_combats/room';
 
-// Цвета
-const kingdom1Color = new Color(1, 0, 0, 0); // Красное королевство
-const kingdom2Color = new Color(0, 0, 1, 0); // Синее королевство
-const kingColor = new Color(1, 1, 0, 0); // Золотой для королей
-const nobleColor = new Color(0.5, 0, 0.5, 0); // Пурпурный для знати
-
-// Королевства
-const Kingdoms = {
-    Red: {
-        name: "Красное Королевство",
-        king: null,
-        nobles: [],
-        members: [],
-        color: kingdom1Color,
-        peaceTreaty: false
+// Константы
+const KINGDOMS = {
+    RED: {
+        name: "🔴 Красное Королевство",
+        color: new Color(1, 0, 0, 0),
+        spawnArea: new Vector3(-50, 0, 0)
     },
-    Blue: {
-        name: "Синее Королевство",
-        king: null,
-        nobles: [],
-        members: [],
-        color: kingdom2Color,
-        peaceTreaty: false
-    },
-    PlayerToKingdom: {} // {playerId: kingdomName}
+    BLUE: {
+        name: "🔵 Синее Королевство",
+        color: new Color(0, 0, 1, 0),
+        spawnArea: new Vector3(50, 0, 0)
+    }
 };
 
-// Уровни и роли
-const Roles = {
-    KING: 3,
-    NOBLE: 2,
-    SOLDIER: 1,
-    GetRoleName: function(role) {
-        switch(role) {
-            case this.KING: return "Король";
-            case this.NOBLE: return "Дворянин";
-            default: return "Солдат";
-        }
-    }
+const ROLES = {
+    KING: { level: 3, name: "Король", hp: 200, color: new Color(1, 1, 0, 0) },
+    NOBLE: { level: 2, name: "Дворянин", hp: 150, color: new Color(0.5, 0, 0.5, 0) },
+    SOLDIER: { level: 1, name: "Солдат", hp: 100, color: null }
+};
+
+// Состояние игры
+const GameState = {
+    kingdoms: {
+        red: { king: null, nobles: [], members: [], peace: false, tax: 0 },
+        blue: { king: null, nobles: [], members: [], peace: false, tax: 0 }
+    },
+    playerRoles: {},
+    playerKingdoms: {},
+    castleHealth: { red: 1000, blue: 1000 },
+    lastAttackTime: { red: 0, blue: 0 }
 };
 
 // Инициализация команд
-Teams.Add('RedKingdom', Kingdoms.Red.name, Kingdoms.Red.color);
-Teams.Add('BlueKingdom', Kingdoms.Blue.name, Kingdoms.Blue.color);
+Teams.Add('RedKingdom', KINGDOMS.RED.name, KINGDOMS.RED.color);
+Teams.Add('BlueKingdom', KINGDOMS.BLUE.name, KINGDOMS.BLUE.color);
 const RedTeam = Teams.Get('RedKingdom');
 const BlueTeam = Teams.Get('BlueKingdom');
 
-// Настройки таблицы лидеров
-LeaderBoard.PlayerLeaderBoardValues = [
-    new DisplayValueHeader('Kills', 'Убийства', 'У'),
-    new DisplayValueHeader('Deaths', 'Смерти', 'С'),
-    new DisplayValueHeader('Role', 'Ранг', 'Ранг'),
-    new DisplayValueHeader('Kingdom', 'Королевство', 'Корол.')
-];
+// Настройки урона
+Damage.GetContext().FriendlyFire.Value = true;
 
-// Функции для работы с королевствами
-function JoinKingdom(player, kingdomName) {
-    if (Kingdoms.PlayerToKingdom[player.id]) {
-        player.Ui.Hint.Value = `Вы уже в королевстве ${Kingdoms.PlayerToKingdom[player.id]}`;
-        return false;
+// Система ресурсов
+const Resources = {
+    gold: {},
+    addGold: function(playerId, amount) {
+        this.gold[playerId] = (this.gold[playerId] || 0) + amount;
+        return this.gold[playerId];
+    },
+    getGold: function(playerId) {
+        return this.gold[playerId] || 0;
+    },
+    transferGold: function(from, to, amount) {
+        if (this.gold[from] < amount) return false;
+        this.gold[from] -= amount;
+        this.addGold(to, amount);
+        return true;
     }
+};
 
-    const kingdom = Kingdoms[kingdomName];
-    if (!kingdom) {
-        player.Ui.Hint.Value = "Неизвестное королевство";
-        return false;
-    }
+// Основные функции
+function setRole(player, role) {
+    GameState.playerRoles[player.id] = role;
+    player.Properties.Get('Role').Value = role.level;
+    player.Properties.Get('RoleName').Value = role.name;
+    player.contextedProperties.MaxHp.Value = role.hp;
+    if (role.color) player.contextedProperties.SkinColor.Value = role.color;
+}
 
-    // Первый в королевстве становится королем
-    if (kingdom.members.length === 0) {
-        kingdom.king = player.id;
-        player.Properties.Get('Role').Value = Roles.KING;
-        player.contextedProperties.SkinType.Value = 4; // Особый скин для короля
-        player.contextedProperties.MaxHp.Value = 200; // Больше здоровья
-        Chat.Broadcast(`Игрок ${player.NickName} стал королем ${kingdom.name}!`);
+function joinKingdom(player, kingdom) {
+    if (GameState.playerKingdoms[player.id]) return false;
+    
+    const kData = GameState.kingdoms[kingdom];
+    kData.members.push(player.id);
+    GameState.playerKingdoms[player.id] = kingdom;
+    player.Properties.Get('Kingdom').Value = kingdom;
+    
+    // Первый участник становится королем
+    if (kData.members.length === 1) {
+        kData.king = player.id;
+        setRole(player, ROLES.KING);
+        Chat.Broadcast(`👑 ${player.NickName} стал королем ${KINGDOMS[kingdom.toUpperCase()].name}!`);
     } else {
-        player.Properties.Get('Role').Value = Roles.SOLDIER;
+        setRole(player, ROLES.SOLDIER);
     }
-
-    kingdom.members.push(player.id);
-    Kingdoms.PlayerToKingdom[player.id] = kingdomName;
-    player.Properties.Get('Kingdom').Value = kingdomName;
     
     // Добавляем в команду
-    const team = kingdomName === 'Red' ? RedTeam : BlueTeam;
+    const team = kingdom === 'red' ? RedTeam : BlueTeam;
     team.Add(player);
     
-    player.Ui.Hint.Value = `Вы присоединились к ${kingdom.name}`;
+    // Телепортация в зону спавна
+    player.Teleport(KINGDOMS[kingdom.toUpperCase()].spawnArea);
+    
     return true;
 }
 
-function LeaveKingdom(player) {
-    const kingdomName = Kingdoms.PlayerToKingdom[player.id];
-    if (!kingdomName) {
-        player.Ui.Hint.Value = "Вы не в королевстве";
-        return false;
-    }
-
-    const kingdom = Kingdoms[kingdomName];
-    const role = player.Properties.Get('Role').Value;
-
-    // Удаляем игрока из королевства
-    kingdom.members = kingdom.members.filter(id => id !== player.id);
-    if (role === Roles.NOBLE) {
-        kingdom.nobles = kingdom.nobles.filter(id => id !== player.id);
-    }
-    delete Kingdoms.PlayerToKingdom[player.id];
-    player.Properties.Get('Kingdom').Value = "-";
-    player.Properties.Get('Role').Value = 0;
-
+function leaveKingdom(player) {
+    const kingdom = GameState.playerKingdoms[player.id];
+    if (!kingdom) return false;
+    
+    const kData = GameState.kingdoms[kingdom];
+    const role = GameState.playerRoles[player.id];
+    
+    // Удаляем из всех списков
+    kData.members = kData.members.filter(id => id !== player.id);
+    kData.nobles = kData.nobles.filter(id => id !== player.id);
+    
     // Если это был король - выбираем нового
-    if (kingdom.king === player.id) {
-        if (kingdom.nobles.length > 0) {
-            // Назначаем королем первого дворянина
-            kingdom.king = kingdom.nobles[0];
-            const newKing = Players.Get(kingdom.king);
-            if (newKing) {
-                newKing.Properties.Get('Role').Value = Roles.KING;
-                newKing.contextedProperties.SkinType.Value = 4;
-                newKing.contextedProperties.MaxHp.Value = 200;
-                Chat.Broadcast(`Игрок ${newKing.NickName} стал новым королем ${kingdom.name}!`);
-            }
-        } else if (kingdom.members.length > 0) {
-            // Назначаем королем первого солдата
-            kingdom.king = kingdom.members[0];
-            const newKing = Players.Get(kingdom.king);
-            if (newKing) {
-                newKing.Properties.Get('Role').Value = Roles.KING;
-                newKing.contextedProperties.SkinType.Value = 4;
-                newKing.contextedProperties.MaxHp.Value = 200;
-                Chat.Broadcast(`Игрок ${newKing.NickName} стал новым королем ${kingdom.name}!`);
-            }
+    if (kData.king === player.id) {
+        if (kData.nobles.length > 0) {
+            promotePlayer(kData.nobles[0], true);
+        } else if (kData.members.length > 0) {
+            promotePlayer(kData.members[0], true);
         } else {
-            kingdom.king = null;
+            kData.king = null;
         }
     }
-
-    // Удаляем из команды
-    const team = kingdomName === 'Red' ? RedTeam : BlueTeam;
-    team.Remove(player);
-
-    player.Ui.Hint.Value = `Вы покинули ${kingdom.name}`;
-    return true;
-}
-
-function PromotePlayer(king, targetId) {
-    const kingdomName = Kingdoms.PlayerToKingdom[king.id];
-    if (!kingdomName || king.id !== Kingdoms[kingdomName].king) {
-        king.Ui.Hint.Value = "Только король может повышать";
-        return false;
-    }
-
-    const target = Players.Get(targetId);
-    if (!target) {
-        king.Ui.Hint.Value = "Игрок не найден";
-        return false;
-    }
-
-    if (Kingdoms.PlayerToKingdom[targetId] !== kingdomName) {
-        king.Ui.Hint.Value = "Игрок не из вашего королевства";
-        return false;
-    }
-
-    if (target.Properties.Get('Role').Value >= Roles.NOBLE) {
-        king.Ui.Hint.Value = "Игрок уже имеет высокий ранг";
-        return false;
-    }
-
-    target.Properties.Get('Role').Value = Roles.NOBLE;
-    Kingdoms[kingdomName].nobles.push(targetId);
-    target.contextedProperties.SkinType.Value = 2; // Скин для дворянина
-    target.contextedProperties.MaxHp.Value = 150; // Больше здоровья чем у солдата
-
-    Chat.Broadcast(`Игрок ${target.NickName} повышен до дворянина в ${Kingdoms[kingdomName].name}!`);
-    return true;
-}
-
-function SignPeaceTreaty(king1, king2) {
-    const kingdom1Name = Kingdoms.PlayerToKingdom[king1.id];
-    const kingdom2Name = Kingdoms.PlayerToKingdom[king2.id];
     
-    if (!kingdom1Name || !kingdom2Name || 
-        king1.id !== Kingdoms[kingdom1Name].king || 
-        king2.id !== Kingdoms[kingdom2Name].king) {
-        king1.Ui.Hint.Value = "Только короли могут подписывать договоры";
-        return false;
-    }
-
-    if (kingdom1Name === kingdom2Name) {
-        king1.Ui.Hint.Value = "Нельзя заключить мир с самим собой";
-        return false;
-    }
-
-    Kingdoms[kingdom1Name].peaceTreaty = true;
-    Kingdoms[kingdom2Name].peaceTreaty = true;
-    Damage.GetContext().FriendlyFire.Value = false;
-
-    Chat.Broadcast(`Мирный договор между ${Kingdoms[kingdom1Name].name} и ${Kingdoms[kingdom2Name].name} подписан!`);
+    // Удаляем данные игрока
+    delete GameState.playerKingdoms[player.id];
+    delete GameState.playerRoles[player.id];
+    player.Properties.Get('Kingdom').Value = "-";
+    player.Properties.Get('Role').Value = 0;
+    
+    // Удаляем из команды
+    const team = kingdom === 'red' ? RedTeam : BlueTeam;
+    team.Remove(player);
+    
     return true;
 }
 
-function BreakPeaceTreaty(king) {
-    const kingdomName = Kingdoms.PlayerToKingdom[king.id];
-    if (!kingdomName || king.id !== Kingdoms[kingdomName].king) {
-        king.Ui.Hint.Value = "Только король может разорвать договор";
+function promotePlayer(targetId, silent = false) {
+    const player = Players.Get(targetId);
+    if (!player) return false;
+    
+    const kingdom = GameState.playerKingdoms[targetId];
+    if (!kingdom) return false;
+    
+    const kData = GameState.kingdoms[kingdom];
+    if (kData.king === targetId) return false;
+    
+    setRole(player, ROLES.NOBLE);
+    kData.nobles.push(targetId);
+    
+    if (!silent) {
+        Chat.Broadcast(`🎖️ ${player.NickName} повышен до дворянина в ${KINGDOMS[kingdom.toUpperCase()].name}!`);
+    }
+    
+    return true;
+}
+
+function signPeaceTreaty(kingdom1, kingdom2) {
+    GameState.kingdoms[kingdom1].peace = true;
+    GameState.kingdoms[kingdom2].peace = true;
+    Damage.GetContext().FriendlyFire.Value = false;
+    
+    Chat.Broadcast(`☮️ ${KINGDOMS[kingdom1.toUpperCase()].name} и ${KINGDOMS[kingdom2.toUpperCase()].name} заключили мир!`);
+    return true;
+}
+
+function breakPeaceTreaty(kingdom) {
+    GameState.kingdoms[kingdom].peace = false;
+    Damage.GetContext().FriendlyFire.Value = true;
+    
+    Chat.Broadcast(`⚔️ ${KINGDOMS[kingdom.toUpperCase()].name} разорвал мирный договор!`);
+    return true;
+}
+
+// Экономические функции
+function collectTaxes(kingdom) {
+    const kData = GameState.kingdoms[kingdom];
+    if (!kData.king) return;
+    
+    const taxAmount = kData.tax;
+    let totalCollected = 0;
+    
+    kData.members.forEach(memberId => {
+        if (memberId !== kData.king) {
+            const success = Resources.transferGold(memberId, kData.king, taxAmount);
+            if (success) totalCollected += taxAmount;
+        }
+    });
+    
+    if (totalCollected > 0) {
+        const king = Players.Get(kData.king);
+        if (king) king.Ui.Hint.Value = `Собрано налогов: ${totalCollected} золота`;
+    }
+}
+
+// Боевые механики
+function attackCastle(attacker, kingdom) {
+    if (GameState.kingdoms[kingdom].peace) return false;
+    
+    const now = Date.now();
+    if (now - GameState.lastAttackTime[kingdom] < 30000) {
+        attacker.Ui.Hint.Value = "Замок можно атаковать раз в 30 секунд";
         return false;
     }
-
-    Kingdoms[kingdomName].peaceTreaty = false;
-    Damage.GetContext().FriendlyFire.Value = true;
-
-    Chat.Broadcast(`${Kingdoms[kingdomName].name} разорвал мирный договор!`);
+    
+    GameState.castleHealth[kingdom] -= 50;
+    GameState.lastAttackTime[kingdom] = now;
+    
+    if (GameState.castleHealth[kingdom] <= 0) {
+        GameState.castleHealth[kingdom] = 0;
+        Chat.Broadcast(`💀 Замок ${KINGDOMS[kingdom.toUpperCase()].name} разрушен!`);
+        // Награда за разрушение замка
+        Resources.addGold(attacker.id, 500);
+    } else {
+        Chat.Broadcast(`🏰 Замок ${KINGDOMS[kingdom.toUpperCase()].name} атакован! Здоровье: ${GameState.castleHealth[kingdom]}/1000`);
+    }
+    
     return true;
 }
 
 // Обработчики событий
-Players.OnPlayerConnected.Add(function(p) {
-    p.Ui.Hint.Value = 'Добро пожаловать в режим Королевств! Используйте /join red или /join blue';
+Players.OnPlayerConnected.Add(p => {
+    p.Properties.Get('Gold').Value = 0;
+    Resources.addGold(p.id, 100); // Стартовое золото
+    p.Ui.Hint.Value = 'Добро пожаловать! Используйте /join red или /join blue';
 });
 
-Teams.OnRequestJoinTeam.Add(function(p, t) {
-    p.Properties.Get('Role').Value = 0;
-    p.Properties.Get('Kingdom').Value = "-";
+Players.OnPlayerDisconnected.Add(p => {
+    // Сохраняем золото при выходе
+    p.Properties.Get('Gold').Value = Resources.getGold(p.id);
+});
+
+Teams.OnPlayerChangeTeam.Add(p => {
+    p.Spawns.Spawn();
     p.Properties.Get('Kills').Value = 0;
     p.Properties.Get('Deaths').Value = 0;
 });
 
-Teams.OnPlayerChangeTeam.Add(function(p) { 
+Damage.OnDeath.Add(p => {
     p.Spawns.Spawn();
-    p.msg.Show(`Привет, ${p.NickName}! Выбери королевство (/join red или /join blue)`);
-});
-
-Damage.OnDeath.Add(function(p) {
-    p.Spawns.Spawn();
-    ++p.Properties.Deaths.Value;
-});
-
-Damage.OnKill.Add(function(p, k) {
-    if (p.id !== k.id) { 
-        ++p.Properties.Kills.Value;
-        
-        // Если убил короля - получаешь больше очков
-        if (k.Properties.Get('Role').Value === Roles.KING) {
-            p.Properties.Scores.Value += 100;
-            Chat.Broadcast(`Король ${k.NickName} был убит игроком ${p.NickName}!`);
-        } else {
-            p.Properties.Scores.Value += 10;
-        }
+    p.Properties.Get('Deaths').Value++;
+    
+    // Потеря золота при смерти
+    const lostGold = Math.floor(Resources.getGold(p.id) * 0.1);
+    if (lostGold > 0) {
+        Resources.addGold(p.id, -lostGold);
+        p.Ui.Hint.Value = `Вы потеряли ${lostGold} золота при смерти`;
     }
 });
 
-// Обработчики чат-команд
-Chat.OnPlayerMessage.Add(function(p, msg) {
+Damage.OnKill.Add((killer, victim) => {
+    if (killer.id === victim.id) return;
+    
+    killer.Properties.Get('Kills').Value++;
+    
+    // Награда за убийство зависит от ранга жертвы
+    let reward = 10;
+    const victimRole = GameState.playerRoles[victim.id];
+    if (victimRole === ROLES.NOBLE) reward = 25;
+    if (victimRole === ROLES.KING) reward = 100;
+    
+    Resources.addGold(killer.id, reward);
+    killer.Ui.Hint.Value = `+${reward} золота за убийство`;
+    
+    // Особое сообщение за убийство короля
+    if (victimRole === ROLES.KING) {
+        Chat.Broadcast(`💀 Король ${victim.NickName} был убит игроком ${killer.NickName}!`);
+    }
+});
+
+// Чат-команды
+Chat.OnPlayerMessage.Add((p, msg) => {
     const args = msg.split(' ');
     const cmd = args[0].toLowerCase();
+    const kingdom = GameState.playerKingdoms[p.id];
 
-    switch(cmd) {
-        case '/join':
-            if (args.length < 2) {
-                p.Ui.Hint.Value = "Используйте: /join red или /join blue";
+    try {
+        switch(cmd) {
+            case '/join':
+                if (args.length < 2) throw "Используйте: /join red или /join blue";
+                const k = args[1].toLowerCase();
+                if (k !== 'red' && k !== 'blue') throw "Неизвестное королевство";
+                if (kingdom) throw "Вы уже в королевстве";
+                return joinKingdom(p, k);
+                
+            case '/leave':
+                if (!kingdom) throw "Вы не в королевстве";
+                return leaveKingdom(p);
+                
+            case '/promote':
+                if (!kingdom || GameState.kingdoms[kingdom].king !== p.id) throw "Только король может повышать";
+                if (args.length < 2) throw "Укажите ID игрока";
+                return promotePlayer(args[1]);
+                
+            case '/peace':
+                if (!kingdom || GameState.kingdoms[kingdom].king !== p.id) throw "Только король может заключать мир";
+                const otherKingdom = kingdom === 'red' ? 'blue' : 'red';
+                if (GameState.kingdoms[otherKingdom].king === null) throw "В другом королевстве нет короля";
+                return signPeaceTreaty(kingdom, otherKingdom);
+                
+            case '/war':
+                if (!kingdom || GameState.kingdoms[kingdom].king !== p.id) throw "Только король может объявлять войну";
+                return breakPeaceTreaty(kingdom);
+                
+            case '/tax':
+                if (!kingdom || GameState.kingdoms[kingdom].king !== p.id) throw "Только король может устанавливать налог";
+                const tax = parseInt(args[1]);
+                if (isNaN(tax) || tax < 0 || tax > 50) throw "Налог должен быть от 0 до 50";
+                GameState.kingdoms[kingdom].tax = tax;
+                Chat.Broadcast(`📜 ${p.NickName} установил налог ${tax}% в ${KINGDOMS[kingdom.toUpperCase()].name}`);
                 return false;
-            }
-            const kingdom = args[1].toLowerCase();
-            if (kingdom === 'red') {
-                return JoinKingdom(p, 'Red');
-            } else if (kingdom === 'blue') {
-                return JoinKingdom(p, 'Blue');
-            } else {
-                p.Ui.Hint.Value = "Неизвестное королевство. Используйте red или blue";
+                
+            case '/collect':
+                if (!kingdom || GameState.kingdoms[kingdom].king !== p.id) throw "Только король может собирать налоги";
+                collectTaxes(kingdom);
                 return false;
-            }
-            
-        case '/leave':
-            return LeaveKingdom(p);
-            
-        case '/promote':
-            if (args.length < 2) {
-                p.Ui.Hint.Value = "Используйте: /promote playerId";
+                
+            case '/attack':
+                if (!kingdom) throw "Вы не в королевстве";
+                const targetKingdom = kingdom === 'red' ? 'blue' : 'red';
+                return attackCastle(p, targetKingdom);
+                
+            case '/gold':
+                p.Ui.Hint.Value = `Ваше золото: ${Resources.getGold(p.id)}`;
                 return false;
-            }
-            return PromotePlayer(p, args[1]);
-            
-        case '/pptreaty':
-            if (args.length < 2) {
-                p.Ui.Hint.Value = "Используйте: /pptreaty playerId";
+                
+            case '/give':
+                if (args.length < 3) throw "Используйте: /give playerId amount";
+                const amount = parseInt(args[2]);
+                if (isNaN(amount) || amount <= 0) throw "Укажите корректную сумму";
+                if (Resources.getGold(p.id) < amount) throw "Недостаточно золота";
+                const target = Players.Get(args[1]);
+                if (!target) throw "Игрок не найден";
+                Resources.transferGold(p.id, target.id, amount);
+                p.Ui.Hint.Value = `Вы передали ${amount} золота игроку ${target.NickName}`;
+                target.Ui.Hint.Value = `Вы получили ${amount} золота от ${p.NickName}`;
                 return false;
-            }
-            const target = Players.Get(args[1]);
-            if (!target) {
-                p.Ui.Hint.Value = "Игрок не найден";
+                
+            case '/kingdom':
+                if (!kingdom) throw "Вы не в королевстве";
+                const kInfo = GameState.kingdoms[kingdom];
+                let info = `=== ${KINGDOMS[kingdom.toUpperCase()].name} ===\n`;
+                info += `👑 Король: ${kInfo.king ? Players.Get(kInfo.king).NickName : "Нет"}\n`;
+                info += `🎖️ Дворян: ${kInfo.nobles.length}\n`;
+                info += `⚔️ Солдат: ${kInfo.members.length - kInfo.nobles.length - (kInfo.king ? 1 : 0)}\n`;
+                info += `☮️ Мирный договор: ${kInfo.peace ? "Да" : "Нет"}\n`;
+                info += `💰 Налог: ${kInfo.tax}%\n`;
+                info += `🏰 Здоровье замка: ${GameState.castleHealth[kingdom]}/1000`;
+                p.Ui.Hint.Value = info;
                 return false;
-            }
-            return SignPeaceTreaty(p, target);
-            
-        case '/breakpeace':
-            return BreakPeaceTreaty(p);
-            
-        case '/kingdom':
-            const kingdomName = Kingdoms.PlayerToKingdom[p.id];
-            if (!kingdomName) {
-                p.Ui.Hint.Value = "Вы не в королевстве";
-                return false;
-            }
-            const kInfo = Kingdoms[kingdomName];
-            p.Ui.Hint.Value = `Королевство: ${kInfo.name}\nКороль: ${kInfo.king ? Players.Get(kInfo.king).NickName : "Нет"}\nДворян: ${kInfo.nobles.length}\nСолдат: ${kInfo.members.length - kInfo.nobles.length - (kInfo.king ? 1 : 0)}`;
-            return false;
-            
-        default:
-            return true; // Разрешить обычные сообщения
+                
+            default:
+                return true;
+        }
+    } catch (e) {
+        p.Ui.Hint.Value = e;
+        return false;
     }
 });
 
-// Автобаланс королевств
-Timers.GetContext().Get('BalanceTimer').OnTimer.Add(function(t) {
-    // Балансируем только если нет мирного договора
-    if (Kingdoms.Red.peaceTreaty && Kingdoms.Blue.peaceTreaty) return;
+// Таймеры
+Timers.GetContext().Get('GameTick').OnTimer.Add(t => {
+    // Восстановление здоровья замков
+    Object.keys(GameState.castleHealth).forEach(k => {
+        if (GameState.castleHealth[k] < 1000) {
+            GameState.castleHealth[k] = Math.min(1000, GameState.castleHealth[k] + 1);
+        }
+    });
     
-    const redCount = RedTeam.PlayersCount;
-    const blueCount = BlueTeam.PlayersCount;
-    
-    if (Math.abs(redCount - blueCount) > 2) {
-        // Переносим игроков из большего королевства в меньшее
-        const fromTeam = redCount > blueCount ? RedTeam : BlueTeam;
-        const toTeam = redCount > blueCount ? BlueTeam : RedTeam;
-        const fromKingdom = redCount > blueCount ? 'Red' : 'Blue';
-        const toKingdom = redCount > blueCount ? 'Blue' : 'Red';
-        
-        // Находим солдата (не короля и не дворянина) для переноса
-        for (const player of fromTeam.Players) {
-            if (player.Properties.Get('Role').Value === Roles.SOLDIER) {
-                LeaveKingdom(player);
-                JoinKingdom(player, toKingdom);
-                break;
+    // Автобаланс команд
+    if (!GameState.kingdoms.red.peace || !GameState.kingdoms.blue.peace) {
+        const diff = RedTeam.PlayersCount - BlueTeam.PlayersCount;
+        if (Math.abs(diff) > 2) {
+            const fromTeam = diff > 0 ? RedTeam : BlueTeam;
+            const toKingdom = diff > 0 ? 'blue' : 'red';
+            
+            for (const player of fromTeam.Players) {
+                if (GameState.playerRoles[player.id]?.level === ROLES.SOLDIER.level) {
+                    leaveKingdom(player);
+                    joinKingdom(player, toKingdom);
+                    break;
+                }
             }
         }
     }
-    t.RestartLoop(30); // Проверяем баланс каждые 30 секунд
-}).RestartLoop(30);
+    
+    t.RestartLoop(10);
+}).RestartLoop(10);
 
-// Инициализация таймера
-Timers.GetContext().Get('BalanceTimer').Start();
+// Инициализация UI
+Ui.GetContext().TeamProp1.Value = { Team: "RedKingdom", Prop: "Kills" };
+Ui.GetContext().TeamProp2.Value = { Team: "BlueKingdom", Prop: "Kills" };
+LeaderBoard.PlayerLeaderBoardValues = [
+    new DisplayValueHeader('Kills', 'Убийства', '⚔️'),
+    new DisplayValueHeader('Deaths', 'Смерти', '💀'),
+    new DisplayValueHeader('RoleName', 'Ранг', '🎖️'),
+    new DisplayValueHeader('Kingdom', 'Королевство', '🏰')
+];
