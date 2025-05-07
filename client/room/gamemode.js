@@ -1,242 +1,271 @@
 import { DisplayValueHeader, Color, Vector3 } from 'pixel_combats/basic';
-import { Game, Map, MapEditor, Players, Inventory, LeaderBoard, BuildBlocksSet, Teams, Damage, BreackGraph, Ui, Properties, GameMode, Spawns, Timers, TeamsBalancer, Build, AreaService, AreaPlayerTriggerService, AreaViewService, Chat } from 'pixel_combats/room';
+import { Game, Map, Players, Inventory, LeaderBoard, Teams, Damage, Ui, Properties, Spawns, Timers, Chat } from 'pixel_combats/room';
 
-// Цвета фракций
-const FactionColors = {
-    Police: new Color(0, 0, 1, 0),      // Синий
-    Bandits: new Color(1, 0, 0, 0),     // Красный
-    Mayor: new Color(1, 1, 0, 0),       // Желтый
-    Mercenaries: new Color(0, 1, 0, 0), // Зеленый
-    Revolution: new Color(1, 0, 1, 0),  // Фиолетовый
-    Detective: new Color(0, 1, 1, 0),   // Голубой (детектив)
-    Reporter: new Color(1, 1, 1, 0)     // Белый (репортер)
-};
-
-// Специальные роли
-const SpecialRoles = {
-    Traitor: "Предатель",  // Скрытый во фракциях
-    Maniac: "Маньяк",     // Независимый убийца
-    Detective: "Детектив",// Нейтральный сыщик
-    Reporter: "Репортер"  // Нейтральный журналист
-};
-
-// Система фракций
-const Factions = {
-    List: {
-        Police: { members: [], color: FactionColors.Police, spawnPoints: [] },
-        Bandits: { members: [], color: FactionColors.Bandits, spawnPoints: [] },
-        Mayor: { members: [], color: FactionColors.Mayor, spawnPoints: [] },
-        Mercenaries: { members: [], color: FactionColors.Mercenaries, spawnPoints: [] },
-        Revolution: { members: [], color: FactionColors.Revolution, spawnPoints: [] }
-    },
-    PlayerToFaction: {}, // { playerId: factionName }
-    Traitors: {},        // { playerId: true } - кто предатель
-    SpecialRoles: {}     // { playerId: roleName } - особые роли
-};
-
-// Настройки сервера
-const Props = Properties.GetContext();
-Props.Get('Time_Hours').Value = 0;
-Props.Get('Time_Minutes').Value = 0;
-Props.Get('Time_Seconds').Value = 0;
-Props.Get('GamePhase').Value = "Day"; // Day / Night / Emergency
-
-// Настройки урона
-Damage.GetContext().FriendlyFire.Value = false; // FF выключен, но предатели могут стрелять в своих
-
-// Инициализация фракций
-function InitFactions() {
-    for (const factionName in Factions.List) {
-        Teams.Add(factionName, factionName, Factions.List[factionName].color);
-        const team = Teams.Get(factionName);
-        team.Spawns.SpawnPointsGroups.Add(1);
-    }
-    // Добавляем нейтральные команды
-    Teams.Add(SpecialRoles.Detective, SpecialRoles.Detective, FactionColors.Detective);
-    Teams.Add(SpecialRoles.Reporter, SpecialRoles.Reporter, FactionColors.Reporter);
-}
-
-// Назначение ролей
-function AssignRoles() {
-    const allPlayers = Players.All;
-    
-    // 1. Назначаем предателей (по 1 на фракцию)
-    for (const factionName in Factions.List) {
-        const faction = Factions.List[factionName];
-        if (faction.members.length > 1) {
-            const randomIndex = Math.floor(Math.random() * faction.members.length);
-            const traitorId = faction.members[randomIndex];
-            Factions.Traitors[traitorId] = true;
-            Players.Get(traitorId).Properties.Get('Role').Value = "Предатель";
-            // Предатель не знает, что он предатель до триггера
-        }
-    }
-    
-    // 2. Назначаем особые роли (детектив, репортер, маньяк)
-    if (allPlayers.length >= 4) {
-        // Детектив
-        const detective = allPlayers[Math.floor(Math.random() * allPlayers.length)];
-        Factions.SpecialRoles[detective.id] = SpecialRoles.Detective;
-        detective.Properties.Get('Role').Value = SpecialRoles.Detective;
-        Teams.Get(SpecialRoles.Detective).Add(detective);
-        
-        // Репортер
-        const reporter = allPlayers.find(p => p.id !== detective.id);
-        if (reporter) {
-            Factions.SpecialRoles[reporter.id] = SpecialRoles.Reporter;
-            reporter.Properties.Get('Role').Value = SpecialRoles.Reporter;
-            Teams.Get(SpecialRoles.Reporter).Add(reporter);
-        }
-        
-        // Маньяк (если игроков достаточно)
-        if (allPlayers.length >= 6) {
-            const maniac = allPlayers.find(p => !Factions.SpecialRoles[p.id]);
-            if (maniac) {
-                Factions.SpecialRoles[maniac.id] = SpecialRoles.Maniac;
-                maniac.Properties.Get('Role').Value = SpecialRoles.Maniac;
-            }
-        }
-    }
-}
-
-// Механика предательства
-function ActivateTraitor(player) {
-    if (Factions.Traitors[player.id]) {
-        player.Ui.Hint.Value = "ТЫ ПРЕДАТЕЛЬ! Уничтожь свою фракцию изнутри!";
-        player.Properties.Get('Role').Value = "Предатель";
-        Damage.GetContext(player).FriendlyFire.Value = true; // Может стрелять в своих
-        
-        // Даем скрытое задание
-        const faction = Factions.List[Factions.PlayerToFaction[player.id]];
-        if (faction.members.length > 1) {
-            const targetId = faction.members.find(id => id !== player.id);
-            if (targetId) {
-                player.Timers.Get('TraitorMission').Restart(60, () => {
-                    player.Ui.Hint.Value = `Убей ${Players.Get(targetId).NickName} до конца дня!`;
-                });
-            }
-        }
-    }
-}
-
-// Система дня и ночи
-const DayNightTimer = Timers.GetContext().Get('DayNightCycle');
-DayNightTimer.OnTimer.Add(function(t) {
-    if (Props.Get('GamePhase').Value === "Day") {
-        Props.Get('GamePhase').Value = "Night";
-        Chat.Broadcast("🌙 Наступает ночь... Предатели активируются!");
-        
-        // Активируем всех предателей ночью
-        for (const playerId in Factions.Traitors) {
-            const player = Players.Get(playerId);
-            if (player) ActivateTraitor(player);
-        }
-        
-        // Маньяк может убивать ночью
-        for (const playerId in Factions.SpecialRoles) {
-            if (Factions.SpecialRoles[playerId] === SpecialRoles.Maniac) {
-                const maniac = Players.Get(playerId);
-                maniac.Ui.Hint.Value = "Охота началась... Выбери жертву!";
-            }
-        }
-    } else {
-        Props.Get('GamePhase').Value = "Day";
-        Chat.Broadcast("☀ Наступает день. Детектив ищет улики...");
-        
-        // Детектив получает подсказку
-        for (const playerId in Factions.SpecialRoles) {
-            if (Factions.SpecialRoles[playerId] === SpecialRoles.Detective) {
-                const detective = Players.Get(playerId);
-                const randomClue = GetRandomClue();
-                detective.Ui.Hint.Value = `Подсказка: ${randomClue}`;
-            }
-        }
-    }
-    DayNightTimer.RestartLoop(300); // 5 минут день/ночь
-});
-
-// Детективные улики
-function GetRandomClue() {
-    const clues = [
+// ========== КОНФИГУРАЦИЯ ==========
+const CONFIG = {
+    DAY_NIGHT_CYCLE: 300, // 5 минут на фазу
+    TRAITOR_REVEAL_CHANCE: 0.3, // 30% шанс что предатель узнает о себе
+    DETECTIVE_CLUES: [
         "Предатель был замечен возле склада",
         "Кто-то подкупил охранника",
         "На месте преступления найдено оружие",
         "Свидетель видел подозрительного человека"
-    ];
-    return clues[Math.floor(Math.random() * clues.length)];
-}
+    ]
+};
 
-// Репортерские сенсации
-function PublishNews(reporter, targetId, scandalType) {
-    const target = Players.Get(targetId);
-    if (!target) return;
-    
-    let message = "";
-    switch (scandalType) {
-        case "corruption":
-            message = `📰 СКАНДАЛ: ${target.NickName} замечен в коррупции!`;
-            target.Properties.Get('Reputation').Value -= 20;
-            break;
-        case "murder":
-            message = `📰 КРИМИНАЛ: ${target.NickName} подозревается в убийстве!`;
-            target.Properties.Get('Reputation').Value -= 30;
-            break;
-        case "secret":
-            message = `📰 РАЗОБЛАЧЕНИЕ: ${target.NickName} скрывает тайну!`;
-            target.Properties.Get('Reputation').Value -= 15;
-            break;
-    }
-    
-    Chat.Broadcast(message);
-    reporter.Properties.Get('Scores').Value += 50;
-}
+// Цвета фракций
+const FACTION_COLORS = {
+    POLICE: new Color(0, 0, 1, 0),      // Синий
+    BANDITS: new Color(1, 0, 0, 0),     // Красный
+    MAYOR: new Color(1, 1, 0, 0),       // Желтый
+    MERCENARIES: new Color(0, 1, 0, 0), // Зеленый
+    REVOLUTION: new Color(1, 0, 1, 0),  // Фиолетовый
+    DETECTIVE: new Color(0, 1, 1, 0),   // Голубой
+    REPORTER: new Color(1, 1, 1, 0)     // Белый
+};
 
-// Обработчик убийств
-Damage.OnKill.Add(function(killer, victim) {
-    // Проверяем, был ли это предатель
-    if (Factions.Traitors[killer.id] && Factions.PlayerToFaction[killer.id] === Factions.PlayerToFaction[victim.id]) {
-        killer.Properties.Get('Scores').Value += 100;
-        Chat.Broadcast(`💀 ПРЕДАТЕЛЬСТВО! ${killer.NickName} убил союзника!`);
-    }
-    
-    // Проверяем, был ли это маньяк
-    if (Factions.SpecialRoles[killer.id] === SpecialRoles.Maniac) {
-        killer.Properties.Get('Scores').Value += 75;
-        Chat.Broadcast(`🔪 КРОВАВАЯ РАСПРАВА! Маньяк нанес удар!`);
-    }
-    
-    // Если убили детектива или репортера
-    if (Factions.SpecialRoles[victim.id] === SpecialRoles.Detective) {
-        Chat.Broadcast("🕵️‍♂️ Детектив убит! Город остался без защиты!");
-    }
-    if (Factions.SpecialRoles[victim.id] === SpecialRoles.Reporter) {
-        Chat.Broadcast("📰 Репортер убит! Правда похоронена вместе с ним!");
-    }
-});
+// Типы ролей
+const ROLE_TYPES = {
+    TRAITOR: "Предатель",
+    MANIAC: "Маньяк",
+    DETECTIVE: "Детектив",
+    REPORTER: "Репортер",
+    DEFAULT: "Горожанин"
+};
 
-// Команды для игроков
-Chat.OnPlayerChat.Add(function(player, msg) {
-    if (msg === "/faction") {
-        const faction = Factions.PlayerToFaction[player.id];
-        player.Ui.Hint.Value = `Ваша фракция: ${faction || "Нет"}`;
+// ========== СИСТЕМА ФРАКЦИЙ ==========
+class FactionSystem {
+    constructor() {
+        this.factions = {
+            POLICE: { name: "Полиция", members: [], color: FACTION_COLORS.POLICE },
+            BANDITS: { name: "Бандиты", members: [], color: FACTION_COLORS.BANDITS },
+            MAYOR: { name: "Администрация", members: [], color: FACTION_COLORS.MAYOR },
+            MERCENARIES: { name: "Наемники", members: [], color: FACTION_COLORS.MERCENARIES },
+            REVOLUTION: { name: "Революционеры", members: [], color: FACTION_COLORS.REVOLUTION }
+        };
+        
+        this.playerRoles = {};
+        this.traitors = new Set();
+        this.dayNightPhase = "DAY";
+    }
+
+    initTeams() {
+        for (const [id, data] of Object.entries(this.factions)) {
+            if (!Teams.Get(id)) {
+                Teams.Add(id, data.name, data.color);
+                Teams.Get(id).Spawns.SpawnPointsGroups.Add(1);
+            }
+        }
+        
+        // Создаем команды для особых ролей
+        if (!Teams.Get(ROLE_TYPES.DETECTIVE)) {
+            Teams.Add(ROLE_TYPES.DETECTIVE, ROLE_TYPES.DETECTIVE, FACTION_COLORS.DETECTIVE);
+        }
+        if (!Teams.Get(ROLE_TYPES.REPORTER)) {
+            Teams.Add(ROLE_TYPES.REPORTER, ROLE_TYPES.REPORTER, FACTION_COLORS.REPORTER);
+        }
+    }
+
+    assignPlayerToFaction(player, factionId) {
+        if (this.factions[factionId]) {
+            this.factions[factionId].members.push(player.id);
+            this.playerRoles[player.id] = { faction: factionId, role: ROLE_TYPES.DEFAULT };
+            Teams.Get(factionId).Add(player);
+            player.Properties.Get("Faction").Value = factionId;
+            player.Properties.Get("Role").Value = ROLE_TYPES.DEFAULT;
+            return true;
+        }
         return false;
     }
+
+    assignSpecialRoles() {
+        const players = Players.All.filter(p => !this.playerRoles[p.id]?.role);
+        if (players.length < 4) return;
+
+        // Выбираем детектива
+        const detective = players[Math.floor(Math.random() * players.length)];
+        this.playerRoles[detective.id] = { role: ROLE_TYPES.DETECTIVE };
+        Teams.Get(ROLE_TYPES.DETECTIVE).Add(detective);
+        detective.Properties.Get("Role").Value = ROLE_TYPES.DETECTIVE;
+
+        // Выбираем репортера из оставшихся
+        const reporter = players.find(p => p.id !== detective.id);
+        if (reporter) {
+            this.playerRoles[reporter.id] = { role: ROLE_TYPES.REPORTER };
+            Teams.Get(ROLE_TYPES.REPORTER).Add(reporter);
+            reporter.Properties.Get("Role").Value = ROLE_TYPES.REPORTER;
+        }
+
+        // Выбираем маньяка если игроков достаточно
+        if (players.length >= 6) {
+            const maniac = players.find(p => !this.playerRoles[p.id]);
+            if (maniac) {
+                this.playerRoles[maniac.id] = { role: ROLE_TYPES.MANIAC };
+                maniac.Properties.Get("Role").Value = ROLE_TYPES.MANIAC;
+            }
+        }
+    }
+
+    assignTraitors() {
+        for (const [factionId, data] of Object.entries(this.factions)) {
+            if (data.members.length > 1) {
+                const traitorId = data.members[Math.floor(Math.random() * data.members.length)];
+                this.traitors.add(traitorId);
+                this.playerRoles[traitorId].role = ROLE_TYPES.TRAITOR;
+                Players.Get(traitorId).Properties.Get("Role").Value = ROLE_TYPES.TRAITOR;
+            }
+        }
+    }
+
+    startDayNightCycle() {
+        Timers.GetContext().Get("DayNightTimer").OnTimer.Add((timer) => {
+            this.dayNightPhase = this.dayNightPhase === "DAY" ? "NIGHT" : "DAY";
+            Chat.Broadcast(this.dayNightPhase === "DAY" ? 
+                "☀ Наступает день. Детектив ищет улики..." : 
+                "🌙 Наступает ночь... Предатели активируются!");
+
+            // Активируем предателей ночью
+            if (this.dayNightPhase === "NIGHT") {
+                this.traitors.forEach(traitorId => {
+                    const player = Players.Get(traitorId);
+                    if (player && Math.random() < CONFIG.TRAITOR_REVEAL_CHANCE) {
+                        player.Ui.Hint.Value = "ТЫ ПРЕДАТЕЛЬ! Уничтожь свою фракцию изнутри!";
+                        Damage.GetContext(player).FriendlyFire.Value = true;
+                    }
+                });
+            }
+
+            // Даем подсказку детективу днем
+            if (this.dayNightPhase === "DAY") {
+                for (const [playerId, roleData] of Object.entries(this.playerRoles)) {
+                    if (roleData.role === ROLE_TYPES.DETECTIVE) {
+                        const clue = CONFIG.DETECTIVE_CLUES[
+                            Math.floor(Math.random() * CONFIG.DETECTIVE_CLUES.length)
+                        ];
+                        Players.Get(playerId).Ui.Hint.Value = `Подсказка: ${clue}`;
+                    }
+                }
+            }
+
+            timer.RestartLoop(CONFIG.DAY_NIGHT_CYCLE);
+        }).RestartLoop(CONFIG.DAY_NIGHT_CYCLE);
+    }
+}
+
+// ========== ОСНОВНОЙ КОД ==========
+const factionSystem = new FactionSystem();
+
+// Инициализация при старте
+function InitGame() {
+    // Настройка свойств сервера
+    const Props = Properties.GetContext();
+    Props.Get('GamePhase').Value = "DAY";
+    Props.Get('Time_Hours').Value = 0;
+    Props.Get('Time_Minutes').Value = 0;
+
+    // Инициализация фракций
+    factionSystem.initTeams();
     
+    // Настройка таблицы лидеров
+    LeaderBoard.PlayerLeaderBoardValues = [
+        new DisplayValueHeader('Kills', 'Убийства', 'Убийств'),
+        new DisplayValueHeader('Deaths', 'Смерти', 'Смертей'),
+        new DisplayValueHeader('Faction', 'Фракция', 'Фракция'),
+        new DisplayValueHeader('Role', 'Роль', 'Роль')
+    ];
+
+    // Настройка урона
+    Damage.GetContext().FriendlyFire.Value = false;
+}
+
+// Обработчик подключения игрока
+Players.OnPlayerConnected.Add((player) => {
+    if (!player.Properties.Get("Faction").Value) {
+        // Распределяем по фракциям для баланса
+        const factionIds = Object.keys(factionSystem.factions);
+        const smallestFaction = factionIds.reduce((smallest, current) => 
+            factionSystem.factions[current].members.length < factionSystem.factions[smallest].members.length ? 
+            current : smallest, factionIds[0]);
+        
+        factionSystem.assignPlayerToFaction(player, smallestFaction);
+    }
+    
+    player.Ui.Hint.Value = `Добро пожаловать в Город Лжи, ${player.NickName}!`;
+});
+
+// Обработчик смены команды
+Teams.OnPlayerChangeTeam.Add((player) => {
+    player.Spawns.Spawn();
+});
+
+// Обработчик убийств
+Damage.OnKill.Add((killer, victim) => {
+    const killerRole = factionSystem.playerRoles[killer.id]?.role;
+    const victimRole = factionSystem.playerRoles[victim.id]?.role;
+    
+    // Предатель убил своего
+    if (factionSystem.traitors.has(killer.id) && 
+        factionSystem.playerRoles[killer.id]?.faction === factionSystem.playerRoles[victim.id]?.faction) {
+        Chat.Broadcast(`💀 ПРЕДАТЕЛЬСТВО! ${killer.NickName} убил союзника!`);
+        killer.Properties.Get('Kills').Value += 1;
+        killer.Properties.Get('Scores').Value += 100;
+    }
+    
+    // Маньяк убил кого-то
+    else if (killerRole === ROLE_TYPES.MANIAC) {
+        Chat.Broadcast(`🔪 КРОВАВАЯ РАСПРАВА! Маньяк убил ${victim.NickName}!`);
+        killer.Properties.Get('Kills').Value += 1;
+        killer.Properties.Get('Scores').Value += 75;
+    }
+    
+    // Убили детектива или репортера
+    else if (victimRole === ROLE_TYPES.DETECTIVE) {
+        Chat.Broadcast("🕵️‍♂️ Детектив убит! Город остался без защиты!");
+    } 
+    else if (victimRole === ROLE_TYPES.REPORTER) {
+        Chat.Broadcast("📰 Репортер убит! Правда похоронена вместе с ним!");
+    }
+    
+    victim.Properties.Get('Deaths').Value += 1;
+});
+
+// Чат-команды
+Chat.OnPlayerChat.Add((player, msg) => {
     if (msg === "/role") {
-        const role = player.Properties.Get('Role').Value || "Обычный член фракции";
+        const role = player.Properties.Get("Role").Value || ROLE_TYPES.DEFAULT;
         player.Ui.Hint.Value = `Ваша роль: ${role}`;
         return false;
     }
     
-    if (msg.startsWith("/report ")) {
-        if (Factions.SpecialRoles[player.id] === SpecialRoles.Reporter) {
-            const args = msg.split(" ");
-            if (args.length >= 3) {
-                const target = Players.Find(p => p.NickName === args[1]);
-                if (target) {
-                    PublishNews(player, target.id, args[2]);
-                    return false;
+    if (msg === "/faction") {
+        const faction = player.Properties.Get("Faction").Value || "Нет";
+        player.Ui.Hint.Value = `Ваша фракция: ${faction}`;
+        return false;
+    }
+    
+    // Команда для репортера
+    if (msg.startsWith("/report ") && factionSystem.playerRoles[player.id]?.role === ROLE_TYPES.REPORTER) {
+        const args = msg.split(" ");
+        if (args.length >= 3) {
+            const target = Players.Find(p => p.NickName === args[1]);
+            if (target) {
+                const scandalType = args[2];
+                let message = "";
+                
+                switch (scandalType) {
+                    case "corruption":
+                        message = `📰 СКАНДАЛ: ${target.NickName} замечен в коррупции!`;
+                        break;
+                    case "murder":
+                        message = `📰 КРИМИНАЛ: ${target.NickName} подозревается в убийстве!`;
+                        break;
+                    default:
+                        message = `📰 НОВОСТЬ: ${target.NickName} замечен в подозрительной деятельности!`;
                 }
+                
+                Chat.Broadcast(message);
+                player.Properties.Get('Scores').Value += 50;
+                return false;
             }
         }
     }
@@ -244,7 +273,12 @@ Chat.OnPlayerChat.Add(function(player, msg) {
     return true;
 });
 
-// Инициализация игры
-InitFactions();
-AssignRoles();
-DayNightTimer.RestartLoop(300);
+// Запуск игры
+InitGame();
+
+// Распределяем роли после подключения всех игроков
+Timers.GetContext().Get("RoleAssignment").Restart(10, () => {
+    factionSystem.assignSpecialRoles();
+    factionSystem.assignTraitors();
+    factionSystem.startDayNightCycle();
+});
