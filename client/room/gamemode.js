@@ -246,181 +246,274 @@ KingCheckTimer.RestartLoop(30);
 Chat.OnMessage.Add(function(m) {
     let mt = m.Text.toLowerCase().trim();
     let sender = Players.GetByRoomId(m.Sender);
-    let isKing = sender.id === Kings.Blue || sender.id === Kings.Red;
-    let isBlueKing = sender.id === Kings.Blue;
-    let isRedKing = sender.id === Kings.Red;
+    let senderRole = sender.Properties.Get('Role').Value;
+    let isKing = senderRole === "KING";
+    let isRoyalGuard = senderRole === "ROYAL_GUARD";
+    let isKnight = senderRole === "KNIGHT";
+    let isRebel = senderRole === "REBEL";
+    let isCitizen = senderRole === "CITIZEN";
 
-    // ======================= 📜 ОБЩИЕ КОМАНДЫ =======================
+    // ======================= 📜 ОБЩИЕ КОМАНДЫ (ВСЕМ) =======================
     if (mt === '/help') {
         let helpMsg = `
-<b>🛠 Доступные команды:</b>
-<b>🔹 Основные:</b>
-/info - информация о режиме
+<b>🛠 Основные команды:</b>
+/info - правила режима
+/roles - список всех ролей
 /king - текущие короли
-/teams - состав команд
-/rtd - испытать удачу (1-50 кредитов)
+/teams - статистика команд
+/rtd - рулетка (1-100 кредитов)
+/achievements - ваши достижения
+/emote [текст] - действие от лица персонажа
 
+<b>👥 Социальные:</b>
+/vote [ник] - проголосовать за игрока
+/gift [RID] [сумма] - подарить кредиты
+/challenge [RID] - вызов на дуэль
+`;
+
+        if (isKing) helpMsg += `
 <b>👑 Королевские команды:</b>
+/appoint [RID] [должность] - назначить на пост
+/decree [текст] - издать указ
+/tax [%] - установить налог
+/hunt [RID] - объявить охоту
+/reward [RID] [сумма] - наградить
+/pardon [RID] - помиловать мятежника
+/banish [RID] - изгнать из королевства
+/war - объявить войну
 /peace - предложить перемирие
-/promote [id] - повысить союзника
-/demote [id] - понизить союзника
-/reward [id] [amount] - наградить союзника
-/decree [text] - королевский указ
 `;
 
-        if (isKing) {
-            helpMsg += `
-<b>⚔️ Военные команды:</b>
-/attack - объявить атаку
-/defense - режим обороны
-/call [text] - призыв к атаке
+        if (isRoyalGuard) helpMsg += `
+<b>🛡 Команды гвардии:</b>
+/protect - защитить короля (+10HP)
+/check [RID] - обыскать игрока
+/arrest [RID] - арестовать нарушителя
 `;
-        }
+
+        if (isKnight) helpMsg += `
+<b>⚔️ Рыцарские команды:</b>
+/oath - принести клятву верности
+/train - тренировать новобранцев
+/patrol - начать патрулирование
+`;
+
+        if (isRebel) helpMsg += `
+<b>🎭 Команды мятежников:</b>
+/rebellion - начать восстание
+/hideme - скрыться на 30 сек
+/sabotage - саботировать постройки
+/spy [RID] - шпионить за игроком
+`;
 
         sender.Ui.Hint.Value = helpMsg;
     }
-    else if (mt === '/info') {
-        sender.Ui.Hint.Value = `
-<b>⚔️ Режим "Два Королевства":</b>
-• 2 команды: Синее и Красное королевства
-• В каждой команде есть король
-• Убийство короля врага: +1000 очков
-• Защита своего короля - главная цель
-• Короли могут издавать указы и награждать союзников
-`;
-    }
-    else if (mt === '/king') {
-        let blueKing = Kings.Blue ? Players.Get(Kings.Blue).NickName : "Нет короля";
-        let redKing = Kings.Red ? Players.Get(Kings.Red).NickName : "Нет короля";
-        sender.Ui.Hint.Value = `
-<b>👑 Текущие короли:</b>
-Синее Королевство: ${blueKing}
-Красное Королевство: ${redKing}
-`;
-    }
-    else if (mt === '/teams') {
-        let blueCount = BlueTeam.PlayersCount;
-        let redCount = RedTeam.PlayersCount;
-        sender.Ui.Hint.Value = `
-<b>👥 Состав команд:</b>
-Синее Королевство: ${blueCount} игроков
-Красное Королевство: ${redCount} игроков
-Баланс: ${Math.abs(blueCount - redCount)}
-`;
-    }
-    else if (mt === '/rtd') {
-        let randomCredits = Math.floor(Math.random() * 50) + 1;
-        sender.Properties.Scores.Value += randomCredits;
-        sender.Ui.Hint.Value = `🎰 Выпало ${randomCredits} кредитов!`;
-        Chat.Broadcast(`${sender.NickName} выиграл ${randomCredits} кредитов в лотерее!`);
-    }
 
     // ======================= 👑 КОРОЛЕВСКИЕ КОМАНДЫ =======================
-    else if (mt === '/peace' && isKing) {
-        let enemyKingId = isBlueKing ? Kings.Red : Kings.Blue;
-        let enemyKing = Players.Get(enemyKingId);
+    else if (mt.startsWith('/hunt ') && isKing) {
+        let targetId = Number(mt.slice(6));
+        let target = Players.GetByRoomId(targetId);
         
-        if (enemyKing) {
-            Chat.Broadcast(`Король ${sender.NickName} предлагает перемирие королю ${enemyKing.NickName}!`);
-            enemyKing.Ui.Hint.Value = `Король ${sender.NickName} предлагает перемирие! Напишите /peace для согласия.`;
-            sender.Ui.Hint.Value = `Предложение перемирия отправлено королю ${enemyKing.NickName}`;
-        } else {
-            sender.Ui.Hint.Value = `У противников нет короля для переговоров!`;
+        if (target && target.Team !== sender.Team) {
+            // Устанавливаем награду за голову
+            target.Properties.Get('Bounty').Value = 1000;
+            Chat.Broadcast(`🏹 Король ${sender.NickName} объявил охоту на ${target.NickName}! Награда: 1000 кредитов!`);
+            
+            // Помечаем цель для всех
+            target.contextedProperties.GlowColor.Value = new Color(1, 0, 0, 0);
+            target.Timers.Get('hunt_timer').Restart(300, () => {
+                target.Properties.Get('Bounty').Value = 0;
+                target.contextedProperties.GlowColor.Value = null;
+            });
         }
     }
-    else if (mt.startsWith('/promote') && isKing) {
-        let targetId = Number(mt.slice(9));
+
+    else if (mt.startsWith('/appoint ') && isKing) {
+        let args = mt.split(' ');
+        if (args.length >= 3) {
+            let targetId = Number(args[1]);
+            let position = args[2];
+            let target = Players.GetByRoomId(targetId);
+            
+            if (target && target.Team === sender.Team) {
+                switch(position) {
+                    case 'guard':
+                        KingProtectionSystem.assignGuard(sender, target);
+                        break;
+                    case 'general':
+                        target.Properties.Get('Role').Value = "GENERAL";
+                        target.contextedProperties.MaxHp.Value = 140;
+                        Chat.BroadcastTeam(sender.Team, `🎖 ${target.NickName} назначен Генералом!`);
+                        break;
+                    case 'knight':
+                        if (countTeamRole(sender.Team, "KNIGHT") < 5) {
+                            target.Properties.Get('Role').Value = "KNIGHT";
+                            target.contextedProperties.MaxHp.Value = 120;
+                            Chat.BroadcastTeam(sender.Team, `⚔️ ${target.NickName} посвящен в Рыцари!`);
+                        } else {
+                            sender.Ui.Hint.Value = "Уже максимальное количество рыцарей (5)!";
+                        }
+                        break;
+                }
+            }
+        }
+    }
+
+    else if (mt.startsWith('/tax ') && isKing) {
+        let taxRate = Number(mt.slice(5));
+        if (taxRate >= 0 && taxRate <= 30) {
+            sender.Team.Properties.Get('TaxRate').Value = taxRate;
+            Chat.BroadcastTeam(sender.Team, `💰 Король установил налог ${taxRate}% на все доходы!`);
+        }
+    }
+
+    // ======================= ⚔️ РЫЦАРСКИЕ КОМАНДЫ =======================
+    else if (mt === '/oath' && isKnight) {
+        sender.Ui.Hint.Value = "⚔️ Вы клянетесь защищать королевство до последней капли крови!";
+        Chat.BroadcastTeam(sender.Team, `⚔️ Рыцарь ${sender.NickName} приносит клятву верности!`);
+        sender.contextedProperties.MaxHp.Value += 10;
+    }
+
+    else if (mt === '/train' && isKnight) {
+        let nearbyCitizens = sender.Team.Players.filter(p => 
+            p.Properties.Get('Role').Value === "CITIZEN" &&
+            Vector3.Distance(p.Position.Value, sender.Position.Value) < 10
+        );
+        
+        nearbyCitizens.forEach(citizen => {
+            citizen.Properties.Scores.Value += 50;
+            citizen.Ui.Hint.Value = `🎖 Рыцарь ${sender.NickName} тренирует вас! +50 кредитов`;
+        });
+        
+        if (nearbyCitizens.length > 0) {
+            sender.Ui.Hint.Value = `🎖 Вы обучили ${nearbyCitizens.length} граждан!`;
+        }
+    }
+
+    // ======================= 🎭 КОМАНДЫ МЯТЕЖНИКОВ =======================
+    else if (mt === '/sabotage' && isRebel) {
+        let enemyBuildings = Map.FindBlocksInRadius(sender.Position.Value, 15)
+            .filter(b => b.Team !== sender.Team);
+        
+        if (enemyBuildings.length > 0) {
+            enemyBuildings.forEach(b => {
+                b.Health.Value -= 50;
+            });
+            Chat.Broadcast(`💣 ${sender.NickName} саботирует вражеские постройки!`);
+        }
+    }
+
+    // ======================= 👥 СОЦИАЛЬНЫЕ КОМАНДЫ =======================
+    else if (mt.startsWith('/vote ') && !isKing) {
+        let targetId = Number(mt.slice(6));
         let target = Players.GetByRoomId(targetId);
         
         if (target && target.Team === sender.Team) {
-            target.Properties.Get('Role').Value = 'Генерал';
-            target.contextedProperties.MaxHp.Value += 25;
-            Chat.BroadcastTeam(sender.Team, `${target.NickName} повышен до Генерала королем ${sender.NickName}!`);
-        } else {
-            sender.Ui.Hint.Value = `Игрок не найден или не в вашей команде!`;
+            target.Properties.Get('Votes').Value++;
+            sender.Ui.Hint.Value = `🗳 Вы проголосовали за ${target.NickName}`;
+            
+            // Если набрано 5 голосов - повышение до рыцаря
+            if (target.Properties.Get('Votes').Value >= 5 && 
+                target.Properties.Get('Role').Value === "CITIZEN") {
+                target.Properties.Get('Role').Value = "KNIGHT";
+                Chat.BroadcastTeam(target.Team, `⚔️ ${target.NickName} получил рыцарское звание по голосованию!`);
+            }
         }
     }
-    else if (mt.startsWith('/demote') && isKing) {
-        let targetId = Number(mt.slice(8));
+
+    else if (mt.startsWith('/challenge ') && !isRebel) {
+        let targetId = Number(mt.slice(10));
         let target = Players.GetByRoomId(targetId);
         
-        if (target && target.Team === sender.Team && target.Properties.Get('Role').Value !== 'Король') {
-            target.Properties.Get('Role').Value = 'Воин';
-            target.contextedProperties.MaxHp.Value = 100;
-            Chat.BroadcastTeam(sender.Team, `${target.NickName} понижен до Воина королем ${sender.NickName}!`);
-        } else {
-            sender.Ui.Hint.Value = `Нельзя понизить этого игрока!`;
+        if (target && target.Team === sender.Team) {
+            Chat.BroadcastTeam(sender.Team, `⚔️ ${sender.NickName} вызывает ${target.NickName} на дуэль!`);
+            target.Ui.Hint.Value = `⚔️ Вас вызвали на дуэль! Напишите /accept ${sender.RoomID} чтобы принять`;
+            sender.Timers.Get('duel_timer').Restart(30, () => {
+                sender.Ui.Hint.Value = "⌛ Время дуэли истекло";
+            });
         }
     }
-    else if (mt.startsWith('/reward') && isKing) {
-        let parts = mt.split(' ');
-        if (parts.length >= 3) {
-            let targetId = Number(parts[1]);
-            let amount = Number(parts[2]);
+
+    else if (mt.startsWith('/accept ') && !isRebel) {
+        let challengerId = Number(mt.slice(8));
+        let challenger = Players.GetByRoomId(challengerId);
+        
+        if (challenger && challenger.Team === sender.Team) {
+            Chat.BroadcastTeam(sender.Team, `⚔️ ${sender.NickName} принимает вызов ${challenger.NickName}!`);
+            
+            // Создаем арену для дуэли
+            let duelArenaPos = new Vector3(0, 50, 0); // Центр карты
+            challenger.Position.Value = duelArenaPos;
+            sender.Position.Value = duelArenaPos;
+            
+            // Включаем PvP между ними
+            challenger.Damage.FriendlyFire.Value = true;
+            sender.Damage.FriendlyFire.Value = true;
+            
+            // Через 30 секунд возвращаем обычные настройки
+            Timers.Get(`duel_end_${challengerId}_${sender.RoomID}`).Restart(30, () => {
+                challenger.Damage.FriendlyFire.Value = false;
+                sender.Damage.FriendlyFire.Value = false;
+                Chat.BroadcastTeam(sender.Team, `⚔️ Дуэль завершена!`);
+            });
+        }
+    }
+
+    // ======================= 🏆 СИСТЕМА НАГРАД =======================
+    else if (mt.startsWith('/reward') && (isKing || isRoyalGuard)) {
+        let args = mt.split(' ');
+        if (args.length >= 3) {
+            let targetId = Number(args[1]);
+            let amount = Number(args[2]);
             let target = Players.GetByRoomId(targetId);
             
             if (target && target.Team === sender.Team && amount > 0) {
                 target.Properties.Scores.Value += amount;
-                Chat.BroadcastTeam(sender.Team, `Король ${sender.NickName} наградил ${target.NickName} ${amount} кредитами!`);
-            } else {
-                sender.Ui.Hint.Value = `Неверная команда! Используйте: /reward [id] [amount]`;
+                Chat.BroadcastTeam(sender.Team, `💰 ${sender.NickName} награждает ${target.NickName} ${amount} кредитами!`);
             }
         }
     }
-    else if (mt.startsWith('/decree') && isKing) {
-        let decreeText = mt.slice(8);
-        if (decreeText) {
-            Chat.BroadcastTeam(sender.Team, `📜 <b>Королевский указ:</b> ${decreeText}`);
-        } else {
-            sender.Ui.Hint.Value = `Напишите текст указа после команды!`;
-        }
-    }
 
-    // ======================= ⚔️ ВОЕННЫЕ КОМАНДЫ (ТОЛЬКО КОРОЛИ) =======================
-    else if (mt === '/attack' && isKing) {
-        Chat.BroadcastTeam(sender.Team, `⚔️ Король ${sender.NickName} объявляет всеобщую атаку! В бой!`);
-        // Можно добавить временные баффы для атаки
-        for (let player of sender.Team.Players) {
-            player.Ui.Hint.Value = "⚔️ Режим атаки! +10% урона в течение 5 минут!";
-            // player.Damage.DamageOut.Value *= 1.1; // +10% урона
-        }
-    }
-    else if (mt === '/defense' && isKing) {
-        Chat.BroadcastTeam(sender.Team, `🛡 Король ${sender.NickName} объявляет режим обороны! Защищайте королевство!`);
-        // Можно добавить временные баффы для защиты
-        for (let player of sender.Team.Players) {
-            player.Ui.Hint.Value = "🛡 Режим обороны! +10% защиты в течение 5 минут!";
-            // player.Damage.DamageIn.Value *= 0.9; // -10% получаемого урона
-        }
-    }
-    else if (mt.startsWith('/call') && isKing) {
-        let callText = mt.slice(5);
-        if (callText) {
-            Chat.BroadcastTeam(sender.Team, `📣 <b>Призыв короля ${sender.NickName}:</b> ${callText}`);
-        } else {
-            sender.Ui.Hint.Value = `Напишите текст призыва после команды!`;
-        }
-    }
-
-    // ======================= 🛡 АДМИН-КОМАНДЫ =======================
-    else if (mt.startsWith('/setking') && sender.Build.BuildRangeEnable.Value) {
-        let targetId = Number(mt.slice(8));
-        let target = Players.GetByRoomId(targetId);
+    // ======================= 🎲 МИНИ-ИГРЫ =======================
+    else if (mt === '/dice') {
+        let roll = Math.floor(Math.random() * 6) + 1;
+        Chat.Broadcast(`🎲 ${sender.NickName} бросает кости: выпало ${roll}!`);
         
-        if (target) {
-            AssignKing(target.Team, target);
-            Chat.Broadcast(`Администратор назначил ${target.NickName} королем ${target.Team.displayName}!`);
+        if (roll === 6) {
+            sender.Properties.Scores.Value += 100;
+            sender.Ui.Hint.Value = "🎉 Крит! +100 кредитов";
         }
     }
-    else if (mt.startsWith('/swapkings') && sender.Build.BuildRangeEnable.Value) {
-        if (Kings.Blue && Kings.Red) {
-            let blueKing = Players.Get(Kings.Blue);
-            let redKing = Players.Get(Kings.Red);
-            
-            AssignKing(RedTeam, blueKing);
-            AssignKing(BlueTeam, redKing);
-            
-            Chat.Broadcast(`Администратор поменял королей местами!`);
+
+    else if (mt === '/coin') {
+        let side = Math.random() > 0.5 ? "Орел" : "Решка";
+        Chat.Broadcast(`🪙 ${sender.NickName} подбрасывает монетку: ${side}!`);
+        
+        if (sender.Properties.Get('Guess') && sender.Properties.Get('Guess').Value === side) {
+            sender.Properties.Scores.Value += 50;
+            sender.Ui.Hint.Value = "✅ Угадал! +50 кредитов";
         }
     }
 });
+
+// ======================= 🎯 ОБРАБОТКА НАГРАД ЗА ОХОТУ =======================
+Damage.OnKill.Add(function(killer, victim) {
+    // Награда за охоту
+    if (victim.Properties.Get('Bounty').Value > 0) {
+        let bounty = victim.Properties.Get('Bounty').Value;
+        killer.Properties.Scores.Value += bounty;
+        Chat.Broadcast(`🏆 ${killer.NickName} получил награду ${bounty} за голову ${victim.NickName}!`);
+        victim.Properties.Get('Bounty').Value = 0;
+        victim.contextedProperties.GlowColor.Value = null;
+    }
+    
+    // Автоматическое голосование за убийцу
+    if (killer.Team === victim.Team && victim.Properties.Get('Role').Value === "REBEL") {
+        killer.Properties.Get('Votes').Value++;
+    }
+});
+
+// ======================= 🛠 ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =======================
+function countTeamRole(team, role) {
+    return team.Players.filter(p => p.Properties.Get('Role').Value === role).length;
+}
