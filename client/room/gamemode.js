@@ -117,7 +117,7 @@ Players.OnPlayerConnected.Add(function(p) {
     p.Properties.Add('Kills', 0);
     p.Properties.Add('Deaths', 0);
     p.Properties.Add('Scores', 0);
-    p.Properties.Add('Role', 'Крестьянин');
+    p.Properties.Get('Role').Value = 'Крестьянин':
     p.Properties.Add('Kingdom', '-');
     p.Properties.Add('Bounty', 0);
     p.Properties.Add('LastDamager', null);
