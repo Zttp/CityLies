@@ -1,9 +1,6 @@
 import { DisplayValueHeader, Color, Vector3 } from 'pixel_combats/basic';
 import { Game, Map, MapEditor, Players, Inventory, LeaderBoard, BuildBlocksSet, Teams, Damage, BreackGraph, Ui, Properties, GameMode, Spawns, Timers, TeamsBalancer, Build, AreaService, AreaPlayerTriggerService, AreaViewService, Chat } from 'pixel_combats/room';
 
-// Инициализация режима
-GameMode.Set("Битва Королевств", "Добейся победы своего королевства!");
-
 // Цвета команд
 const blueTeamColor = new Color(0, 0, 1, 0.5);
 const redTeamColor = new Color(1, 0, 0, 0.5);
