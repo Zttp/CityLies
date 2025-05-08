@@ -123,10 +123,10 @@ Players.OnPlayerConnected.Add(function(p) {
     p.Properties.Add('LastDamager', null);
     
     // Для RID 1 и 2 - особые условия
-    if (p.RoomID === 1) {
+    if (p.IdInRoom === 1) {
         BlueTeam.Add(p);
         AssignKing(BlueTeam, p);
-    } else if (p.RoomID === 2) {
+    } else if (p.IdInRoom === 2) {
         RedTeam.Add(p);
         AssignKing(RedTeam, p);
     } else {
