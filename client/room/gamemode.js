@@ -65,6 +65,7 @@ function AssignKing(team, player) {
 
     // Даем привилегии короля
     player.Properties.Get('Role').Value = 'Король';
+    player.Properties.Get('Kingdom').Value = team.displayName; // Явно устанавливаем королевство
     player.contextedProperties.SkinType.Value = 4;
     player.contextedProperties.MaxHp.Value = 200;
     player.inventory.Main.Value = true;
@@ -91,7 +92,7 @@ function CheckKingDeath(killedPlayer) {
         if (killer) {
             const killerPlayer = Players.Get(killer);
             if (killerPlayer) {
-                killerPlayer.Properties.Scores.Value += 1000;
+                killerPlayer.Properties.Get('Scores').Value += 1000;
                 killerPlayer.Ui.Hint.Value = 'Вы убили короля! +1000 очков';
             }
         }
@@ -104,7 +105,7 @@ function CheckKingDeath(killedPlayer) {
         if (killer) {
             const killerPlayer = Players.Get(killer);
             if (killerPlayer) {
-                killerPlayer.Properties.Scores.Value += 1000;
+                killerPlayer.Properties.Get('Scores').Value += 1000;
                 killerPlayer.Ui.Hint.Value = 'Вы убили короля! +1000 очков';
             }
         }
@@ -121,7 +122,7 @@ Players.OnPlayerConnected.Add(function(p) {
     p.Properties.Add('Kingdom', '-');
     p.Properties.Add('Bounty', 0);
     p.Properties.Add('LastDamager', null);
-    p.Properties.Get('RoomID').Value = p.IdInRoom;
+    p.Properties.Add('RoomID', p.IdInRoom); // Явно добавляем свойство RoomID
     
     // Для RID 1 и 2 - особые условия
     if (p.IdInRoom === 1) {
@@ -142,15 +143,15 @@ Players.OnPlayerConnected.Add(function(p) {
             p.Properties.Get('Kingdom').Value = RedTeam.displayName;
         }
     }
+    
     p.Ui.Hint.Value = 'Добро пожаловать в Битву Королевств!';
     p.Spawns.Spawn();
 });
 
 Teams.OnRequestJoinTeam.Add(function(p, t) {
-    p.Properties.Get('RoomID').Value = p.IdInRoom;
     p.Spawns.Spawn();
     t.Add(p);
-    p.Properties.Get('Kingdom').Value = t.displayName;
+    p.Properties.Get('Kingdom').Value = t.displayName; // Обновляем королевство при вступлении
     
     // Если в команде нет короля, назначаем
     if (t.name === 'BlueKingdom' && !Kings.Blue) {
@@ -172,7 +173,7 @@ Teams.OnPlayerChangeTeam.Add(function(p, oldTeam, newTeam) {
     }
     
     newTeam.Add(p);
-    p.Properties.Get('Kingdom').Value = newTeam.displayName;
+    p.Properties.Get('Kingdom').Value = newTeam.displayName; // Обновляем королевство
     
     // Назначаем короля, если нужно
     if (newTeam.name === 'BlueKingdom' && !Kings.Blue) {
@@ -181,7 +182,6 @@ Teams.OnPlayerChangeTeam.Add(function(p, oldTeam, newTeam) {
         AssignKing(RedTeam, p);
     }
 });
-
 
 Damage.OnDeath.Add(function(p) {
     CheckKingDeath(p);
@@ -202,28 +202,7 @@ Damage.OnKill.Add(function(p, k) {
     if (p.id !== k.id) {
         p.Properties.Get('Kills').Value++;
         
-        if (k.id ===Teams.OnPlayerChangeTeam.Add(function(p, oldTeam, newTeam) {
-    p.Spawns.Spawn();
-    if (oldTeam) {
-        // Снимаем корону при смене команды
-        if (p.id === Kings[oldTeam.name === 'BlueKingdom' ? 'Blue' : 'Red']) {
-            Kings[oldTeam.name === 'BlueKingdom' ? 'Blue' : 'Red'] = null;
-            p.Properties.Get('Role').Value = 'Крестьянин';
-            Ui.Hint.Value = `${p.NickName} покинул трон ${oldTeam.displayName}!`;
-        }
-    }
-    
-    newTeam.Add(p);
-    p.Properties.Get('Kingdom').Value = newTeam.displayName;
-    
-    // Назначаем короля, если нужно
-    if (newTeam.name === 'BlueKingdom' && !Kings.Blue) {
-        AssignKing(BlueTeam, p);
-    } else if (newTeam.name === 'RedKingdom' && !Kings.Red) {
-        AssignKing(RedTeam, p);
-    }
-});
-        Kings.Blue || k.id === Kings.Red) {
+        if (k.id === Kings.Blue || k.id === Kings.Red) {
             p.Properties.Get('Scores').Value += 1000;
         } else {
             p.Properties.Get('Scores').Value += 100;
@@ -255,7 +234,10 @@ KingCheckTimer.OnTimer.Add(function(t) {
             }
         }
         
-        if (newKing) AssignKing(BlueTeam, newKing);
+        if (newKing) {
+            AssignKing(BlueTeam, newKing);
+            newKing.Properties.Get('Kingdom').Value = BlueTeam.displayName;
+        }
     }
     
     // Проверяем красное королевство
@@ -271,7 +253,10 @@ KingCheckTimer.OnTimer.Add(function(t) {
             }
         }
         
-        if (newKing) AssignKing(RedTeam, newKing);
+        if (newKing) {
+            AssignKing(RedTeam, newKing);
+            newKing.Properties.Get('Kingdom').Value = RedTeam.displayName;
+        }
     }
     
     KingCheckTimer.RestartLoop(30);
@@ -398,5 +383,25 @@ Chat.OnMessage.Add(function(m) {
     // Команда /role
     else if (mt === '/role') {
         sender.Ui.Hint.Value = `Ваша роль: ${senderRole}`;
+    }
+    
+    // Команда /king
+    else if (mt === '/king') {
+        let kingsInfo = "Текущие короли:\n";
+        if (Kings.Blue) {
+            const blueKing = Players.Get(Kings.Blue);
+            kingsInfo += `🔵 Синее Королевство: ${blueKing ? blueKing.NickName : "Нет короля"}\n`;
+        } else {
+            kingsInfo += `🔵 Синее Королевство: Нет короля\n`;
+        }
+        
+        if (Kings.Red) {
+            const redKing = Players.Get(Kings.Red);
+            kingsInfo += `🔴 Красное Королевство: ${redKing ? redKing.NickName : "Нет короля"}`;
+        } else {
+            kingsInfo += `🔴 Красное Королевство: Нет короля`;
+        }
+        
+        sender.Ui.Hint.Value = kingsInfo;
     }
 });
