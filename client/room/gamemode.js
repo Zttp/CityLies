@@ -135,10 +135,6 @@ Players.OnPlayerConnected.Add(function(p) {
 });
 
 Teams.OnRequestJoinTeam.Add(function(p, t) {
-    // Разрешаем присоединение к любой команде
-    t.Add(p);
-    p.Properties.Get('Kingdom').Value = t.displayName;
-    
     // Если в команде нет короля, назначаем
     if (t.name === 'BlueKingdom' && !Kings.Blue) {
         AssignKing(BlueTeam, p);
@@ -202,7 +198,6 @@ Damage.OnKill.Add(function(p, k) {
             p.Properties.Scores.Value += bounty;
             Chat.Broadcast(`🏆 ${p.NickName} получил награду ${bounty} за голову ${k.NickName}!`);
             k.Properties.Get('Bounty').Value = 0;
-            k.contextedProperties.GlowColor.Value = null;
         }
     }
 });
@@ -361,25 +356,3 @@ Chat.OnMessage.Add(function(m) {
         sender.Ui.Hint.Value = helpMsg;
     }
 });
-
-// Инициализация спавнов
-Spawns.GetContext().OnSpawn.Add(function(spawnPoint, player) {
-    // Устанавливаем случайную позицию спавна для команды игрока
-    if (player.Team.name === 'BlueKingdom') {
-        spawnPoint.Position.Value = new Vector3(
-            Math.random() * 20 - 10,
-            50,
-            Math.random() * 20 - 10
-        );
-    } else {
-        spawnPoint.Position.Value = new Vector3(
-            Math.random() * 20 + 30,
-            50,
-            Math.random() * 20 + 30
-        );
-    }
-    spawnPoint.Team.Value = player.Team;
-});
-
-// Сообщение о готовности режима
-Chat.Broadcast("Режим 'Битва Королевств' успешно загружен!");
