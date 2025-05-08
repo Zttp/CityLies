@@ -121,9 +121,6 @@ Players.OnPlayerConnected.Add(function(p) {
     p.Properties.Get('Kingdom').Value = '';
     p.Properties.Get('Bounty').Value = 0;
     
-    // Автоматическое распределение по командам
-    TeamsBalancer.AddToLessTeam(p);
-    
     // Для RID 1 и 2 - особые условия
     if (p.RoomID === 1) {
         BlueTeam.Add(p);
