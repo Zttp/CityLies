@@ -115,6 +115,7 @@ function CheckKingDeath(killedPlayer) {
 
 // Обработчики событий
 Players.OnPlayerConnected.Add(function(p) {
+    p.Spawns.Spawn();
     // Проверяем RID игрока
     if (p.RoomID === 1) {
         // Игрок с RID 1 становится королем синего королевства
