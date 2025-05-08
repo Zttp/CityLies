@@ -121,6 +121,7 @@ Players.OnPlayerConnected.Add(function(p) {
     p.Properties.Add('Kingdom', '-');
     p.Properties.Add('Bounty', 0);
     p.Properties.Add('LastDamager', null);
+    p.Properties.Get('RoomID').Value = p.IdInRoom;
     
     // Для RID 1 и 2 - особые условия
     if (p.IdInRoom === 1) {
