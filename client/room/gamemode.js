@@ -1,9 +1,6 @@
 import { DisplayValueHeader, Color, Vector3 } from 'pixel_combats/basic';
 import { Game, Map, MapEditor, Players, Inventory, LeaderBoard, BuildBlocksSet, Teams, Damage, BreackGraph, Ui, Properties, GameMode, Spawns, Timers, TeamsBalancer, Build, AreaService, AreaPlayerTriggerService, AreaViewService, Chat } from 'pixel_combats/room';
 
-// Инициализация режима
-GameMode.Set("Битва Королевств", "Добейся победы своего королевства!");
-
 // Цвета команд
 const blueTeamColor = new Color(0, 0, 1, 0.5); // Синяя команда с прозрачностью
 const redTeamColor = new Color(1, 0, 0, 0.5);  // Красная команда с прозрачностью
@@ -78,7 +75,7 @@ function AssignKing(team, player) {
     player.inventory.ExplosiveInfinity.Value = true;
     
     // Оповещаем всех
-    Chat.Broadcast(`Новый король ${team.displayName}: ${player.NickName}!`);
+    room.Ui.Hint.Value = `Новый король ${team.displayName}: ${player.NickName}!`;
     player.Ui.Hint.Value = `Вы стали королем ${team.displayName}! Защищайте свое королевство!`;
     player.Spawns.Spawn();
 }
@@ -86,7 +83,7 @@ function AssignKing(team, player) {
 // Функция для проверки смерти короля
 function CheckKingDeath(killedPlayer) {
     if (killedPlayer.id === Kings.Blue) {
-        Chat.Broadcast(`Король Синего Королевства пал в бою!`);
+        room.Ui.Hint.Value = `Король Синего Королевства пал в бою!`;
         killedPlayer.Ui.Hint.Value = 'Вы больше не король!';
         Kings.Blue = null;
         
@@ -99,7 +96,7 @@ function CheckKingDeath(killedPlayer) {
             }
         }
     } else if (killedPlayer.id === Kings.Red) {
-        Chat.Broadcast(`Король Красного Королевства пал в бою!`);
+        room.Ui.Hint.Value = `Король Красного Королевства пал в бою!`;
         killedPlayer.Ui.Hint.Value = 'Вы больше не король!';
         Kings.Red = null;
         
