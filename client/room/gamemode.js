@@ -2,9 +2,9 @@ import { DisplayValueHeader, Color, Vector3 } from 'pixel_combats/basic';
 import { Game, Map, MapEditor, Players, Inventory, LeaderBoard, BuildBlocksSet, Teams, Damage, BreackGraph, Ui, Properties, GameMode, Spawns, Timers, TeamsBalancer, Build, AreaService, AreaPlayerTriggerService, AreaViewService, Chat } from 'pixel_combats/room';
 
 // Цвета команд
-const blueTeamColor = new Color(0, 0, 1, 0.5); // Синяя команда с прозрачностью
-const redTeamColor = new Color(1, 0, 0, 0.5);  // Красная команда с прозрачностью
-const kingColor = new Color(1, 1, 0, 0.8);     // Золотой цвет для короля
+const blueTeamColor = new Color(0, 0, 1, 0.5);
+const redTeamColor = new Color(1, 0, 0, 0.5);
+const kingColor = new Color(1, 1, 0, 0.8);
 
 // Создание команд
 Teams.Add('BlueKingdom', 'Синее Королевство', blueTeamColor);
@@ -13,7 +13,7 @@ Teams.Add('RedKingdom', 'Красное Королевство', redTeamColor);
 const BlueTeam = Teams.Get('BlueKingdom');
 const RedTeam = Teams.Get('RedKingdom');
 
-// Настройки строительства для команд
+// Настройки строительства
 BlueTeam.Build.BlocksSet.Value = BuildBlocksSet.Blue;
 RedTeam.Build.BlocksSet.Value = BuildBlocksSet.Red;
 
@@ -75,7 +75,7 @@ function AssignKing(team, player) {
     player.inventory.ExplosiveInfinity.Value = true;
     
     // Оповещаем всех
-    room.Ui.Hint.Value = `Новый король ${team.displayName}: ${player.NickName}!`;
+    Chat.Broadcast(`Новый король ${team.displayName}: ${player.NickName}!`);
     player.Ui.Hint.Value = `Вы стали королем ${team.displayName}! Защищайте свое королевство!`;
     player.Spawns.Spawn();
 }
@@ -83,7 +83,7 @@ function AssignKing(team, player) {
 // Функция для проверки смерти короля
 function CheckKingDeath(killedPlayer) {
     if (killedPlayer.id === Kings.Blue) {
-        room.Ui.Hint.Value = `Король Синего Королевства пал в бою!`;
+        Chat.Broadcast(`Король Синего Королевства пал в бою!`);
         killedPlayer.Ui.Hint.Value = 'Вы больше не король!';
         Kings.Blue = null;
         
@@ -96,7 +96,7 @@ function CheckKingDeath(killedPlayer) {
             }
         }
     } else if (killedPlayer.id === Kings.Red) {
-        room.Ui.Hint.Value = `Король Красного Королевства пал в бою!`;
+        Chat.Broadcast(`Король Красного Королевства пал в бою!`);
         killedPlayer.Ui.Hint.Value = 'Вы больше не король!';
         Kings.Red = null;
         
@@ -114,12 +114,13 @@ function CheckKingDeath(killedPlayer) {
 // Обработчики событий
 Players.OnPlayerConnected.Add(function(p) {
     // Инициализация свойств игрока
-    p.Properties.Get('Kills').Value = 0;
-    p.Properties.Get('Deaths').Value = 0;
-    p.Properties.Get('Scores').Value = 0;
-    p.Properties.Get('Role').Value = 'Крестьянин';
-    p.Properties.Get('Kingdom').Value = '';
-    p.Properties.Get('Bounty').Value = 0;
+    p.Properties.Add('Kills', 0);
+    p.Properties.Add('Deaths', 0);
+    p.Properties.Add('Scores', 0);
+    p.Properties.Add('Role', 'Крестьянин');
+    p.Properties.Add('Kingdom', '');
+    p.Properties.Add('Bounty', 0);
+    p.Properties.Add('LastDamager', null);
     
     // Для RID 1 и 2 - особые условия
     if (p.RoomID === 1) {
@@ -128,14 +129,21 @@ Players.OnPlayerConnected.Add(function(p) {
     } else if (p.RoomID === 2) {
         RedTeam.Add(p);
         AssignKing(RedTeam, p);
+    } else {
+        // Автоматическое распределение по командам
+        if (BlueTeam.PlayersCount <= RedTeam.PlayersCount) {
+            BlueTeam.Add(p);
+        } else {
+            RedTeam.Add(p);
+        }
     }
     
+    p.Properties.Get('Kingdom').Value = p.Team.displayName;
     p.Ui.Hint.Value = 'Добро пожаловать в Битву Королевств!';
     p.Spawns.Spawn();
 });
 
 Teams.OnRequestJoinTeam.Add(function(p, t) {
-    // Разрешаем присоединение к любой команде
     t.Add(p);
     p.Properties.Get('Kingdom').Value = t.displayName;
     
@@ -174,7 +182,7 @@ Teams.OnPlayerChangeTeam.Add(function(p, oldTeam, newTeam) {
 
 Damage.OnDeath.Add(function(p) {
     CheckKingDeath(p);
-    p.Properties.Deaths.Value++;
+    p.Properties.Get('Deaths').Value++;
     p.Spawns.Spawn();
 });
 
@@ -182,26 +190,28 @@ Damage.OnDamage.Add(function(p, dmgd, dmg) {
     dmgd.Properties.Get('LastDamager').Value = p.id;
     
     if (p.id !== dmgd.id) {
-        p.Properties.Scores.Value += Math.ceil(dmg);
+        const scores = p.Properties.Get('Scores');
+        scores.Value += Math.ceil(dmg);
         p.Ui.Hint.Value = `Нанесенный урон: ${Math.ceil(dmg)}`;
     }
 });
 
 Damage.OnKill.Add(function(p, k) {
     if (p.id !== k.id) {
-        p.Properties.Kills.Value++;
+        p.Properties.Get('Kills').Value++;
         
         if (k.id === Kings.Blue || k.id === Kings.Red) {
-            p.Properties.Scores.Value += 1000;
+            p.Properties.Get('Scores').Value += 1000;
         } else {
-            p.Properties.Scores.Value += 100;
+            p.Properties.Get('Scores').Value += 100;
         }
         
         if (k.Properties.Get('Bounty').Value > 0) {
             const bounty = k.Properties.Get('Bounty').Value;
-            p.Properties.Scores.Value += bounty;
+            p.Properties.Get('Scores').Value += bounty;
             Chat.Broadcast(`🏆 ${p.NickName} получил награду ${bounty} за голову ${k.NickName}!`);
             k.Properties.Get('Bounty').Value = 0;
+            k.contextedProperties.GlowColor.Value = null;
         }
     }
 });
@@ -215,8 +225,9 @@ KingCheckTimer.OnTimer.Add(function(t) {
         let newKing = null;
         
         for (const player of BlueTeam.Players) {
-            if (player.Properties.Scores.Value > maxScore) {
-                maxScore = player.Properties.Scores.Value;
+            const score = player.Properties.Get('Scores').Value;
+            if (score > maxScore) {
+                maxScore = score;
                 newKing = player;
             }
         }
@@ -230,8 +241,9 @@ KingCheckTimer.OnTimer.Add(function(t) {
         let newKing = null;
         
         for (const player of RedTeam.Players) {
-            if (player.Properties.Scores.Value > maxScore) {
-                maxScore = player.Properties.Scores.Value;
+            const score = player.Properties.Get('Scores').Value;
+            if (score > maxScore) {
+                maxScore = score;
                 newKing = player;
             }
         }
@@ -279,7 +291,7 @@ Chat.OnMessage.Add(function(m) {
         let args = mt.split(' ');
         if (args.length >= 3) {
             let targetId = Number(args[1]);
-            let role = args[2].charAt(0).toUpperCase() + args[2].slice(1); // Первая буква заглавная
+            let role = args[2].charAt(0).toUpperCase() + args[2].slice(1);
             let target = Players.GetByRoomId(targetId);
             
             if (target && target.Team === sender.Team) {
@@ -317,13 +329,13 @@ Chat.OnMessage.Add(function(m) {
             let totalTax = 0;
             for (const player of sender.Team.Players) {
                 if (player.Properties.Get('Role').Value !== "Король") {
-                    let tax = Math.floor(player.Properties.Scores.Value * (taxRate / 100));
-                    player.Properties.Scores.Value -= tax;
+                    let tax = Math.floor(player.Properties.Get('Scores').Value * (taxRate / 100));
+                    player.Properties.Get('Scores').Value -= tax;
                     totalTax += tax;
                     player.Ui.Hint.Value = `💰 Король собрал с вас налог ${tax} кредитов (${taxRate}%)`;
                 }
             }
-            sender.Properties.Scores.Value += totalTax;
+            sender.Properties.Get('Scores').Value += totalTax;
             Chat.BroadcastTeam(sender.Team, `💰 Король ${sender.NickName} собрал налог ${taxRate}% и получил ${totalTax} кредитов!`);
         } else {
             sender.Ui.Hint.Value = "Налог должен быть от 0 до 30%";
@@ -358,5 +370,10 @@ Chat.OnMessage.Add(function(m) {
 /assistant [RID] - назначить советника
 `;
         sender.Ui.Hint.Value = helpMsg;
+    }
+    
+    // Команда /role
+    else if (mt === '/role') {
+        sender.Ui.Hint.Value = `Ваша роль: ${senderRole}`;
     }
 });
