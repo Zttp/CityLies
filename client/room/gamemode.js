@@ -135,6 +135,10 @@ Players.OnPlayerConnected.Add(function(p) {
 });
 
 Teams.OnRequestJoinTeam.Add(function(p, t) {
+    // Разрешаем присоединение к любой команде
+    t.Add(p);
+    p.Properties.Get('Kingdom').Value = t.displayName;
+    
     // Если в команде нет короля, назначаем
     if (t.name === 'BlueKingdom' && !Kings.Blue) {
         AssignKing(BlueTeam, p);
