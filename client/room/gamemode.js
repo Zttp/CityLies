@@ -136,6 +136,7 @@ Players.OnPlayerConnected.Add(function(p) {
             RedTeam.Add(p);
         }
     }
+    p.Spawns.Spawn();
     
     p.Properties.Get('Kingdom').Value = p.Team.displayName;
     p.Ui.Hint.Value = 'Добро пожаловать в Битву Королевств!';
@@ -164,6 +165,7 @@ Teams.OnPlayerChangeTeam.Add(function(p, oldTeam, newTeam) {
     }
     
     newTeam.Add(p);
+    p.Spawns.Spawn();
     p.Properties.Get('Kingdom').Value = newTeam.displayName;
     
     // Назначаем короля, если нужно
