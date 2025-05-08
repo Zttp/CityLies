@@ -152,6 +152,7 @@ Teams.OnRequestJoinTeam.Add(function(p, t) {
     } else if (t.name === 'RedKingdom' && !Kings.Red) {
         AssignKing(RedTeam, p);
     }
+    p.Spawns.Spawn();
 });
 
 Teams.OnPlayerChangeTeam.Add(function(p, oldTeam, newTeam) {
