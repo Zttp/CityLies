@@ -75,7 +75,7 @@ function AssignKing(team, player) {
     player.inventory.ExplosiveInfinity.Value = true;
     
     // Оповещаем всех
-    Chat.Broadcast(`Новый король ${team.displayName}: ${player.NickName}!`);
+    room.Ui.Hint.Value = `Новый король ${team.displayName}: ${player.NickName}!`;
     player.Ui.Hint.Value = `Вы стали королем ${team.displayName}! Защищайте свое королевство!`;
     player.Spawns.Spawn(); // Спавним короля
 }
@@ -84,7 +84,7 @@ function AssignKing(team, player) {
 function CheckKingDeath(killedPlayer) {
     if (killedPlayer.id === Kings.Blue) {
         // Король синего королевства убит
-        Chat.Broadcast(`Король Синего Королевства пал в бою!`);
+        room.Ui.Hint.Value = `Король Синего Королевства пал в бою!`;
         killedPlayer.Ui.Hint.Value = 'Вы больше не король!';
         Kings.Blue = null;
         // Награда убийце
@@ -98,7 +98,7 @@ function CheckKingDeath(killedPlayer) {
         }
     } else if (killedPlayer.id === Kings.Red) {
         // Король красного королевства убит
-        Chat.Broadcast(`Король Красного Королевства пал в бою!`);
+        room.Ui.Hint.Value = `Король Красного Королевства пал в бою!`;
         killedPlayer.Ui.Hint.Value = 'Вы больше не король!';
         Kings.Red = null;
         // Награда убийце
@@ -156,7 +156,7 @@ Teams.OnPlayerChangeTeam.Add(function(p, oldTeam, newTeam) {
         }
         p.Properties.Get('Role').Value = 'Крестьянин';
         p.contextedProperties.SkinType.Value = 0;
-        Chat.Broadcast(`${p.NickName} покинул трон ${oldTeam.displayName}!`);
+        room.Ui.Hint.Value = `${p.NickName} покинул трон ${oldTeam.displayName}!`;
     }
     
     // Обновляем информацию о королевстве
@@ -203,7 +203,7 @@ Damage.OnKill.Add(function(p, k) {
         if (k.Properties.Get('Bounty').Value > 0) {
             const bounty = k.Properties.Get('Bounty').Value;
             p.Properties.Scores.Value += bounty;
-            Chat.Broadcast(`🏆 ${p.NickName} получил награду ${bounty} за голову ${k.NickName}!`);
+            room.Ui.Hint.Value = `🏆 ${p.NickName} получил награду ${bounty} за голову ${k.NickName}!`;
             k.Properties.Get('Bounty').Value = 0;
             k.contextedProperties.GlowColor.Value = null;
         }
@@ -273,7 +273,7 @@ Chat.OnMessage.Add(function(m) {
             if (target && target.Team !== sender.Team && bountyAmount > 0) {
                 // Устанавливаем награду за голову
                 target.Properties.Get('Bounty').Value = bountyAmount;
-                Chat.Broadcast(`🏹 Король ${sender.NickName} объявил охоту на ${target.NickName}! Награда: ${bountyAmount} кредитов!`);
+                room.Ui.Hint.Value = `🏹 Король ${sender.NickName} объявил охоту на ${target.NickName}! Награда: ${bountyAmount} кредитов!`;
                 
                 // Помечаем цель для всех
                 target.contextedProperties.GlowColor.Value = new Color(1, 0, 0, 0);
