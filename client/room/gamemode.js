@@ -112,6 +112,7 @@ function CheckKingDeath(killedPlayer) {
 
 // Обработчики событий
 Players.OnPlayerConnected.Add(function(p) {
+    p.Spawns.Spawn();
     p.Ui.Hint.Value = 'Добро пожаловать в битву королевств!';
 });
 
