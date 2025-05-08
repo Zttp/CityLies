@@ -29,7 +29,8 @@ LeaderBoard.PlayerLeaderBoardValues = [
     new DisplayValueHeader('Deaths', 'Смерти', 'С'),
     new DisplayValueHeader('Scores', 'Очки', 'О'),
     new DisplayValueHeader('Role', 'Роль', 'Р'),
-    new DisplayValueHeader('Kingdom', 'Королевство', 'К')
+    new DisplayValueHeader('Kingdom', 'Королевство', 'К'),
+    new DisplayValueHeader('RoomID', 'Room ID', 'Room ID')
 ];
 
 LeaderBoard.PlayersWeightGetter.Set(function(p) {
@@ -117,7 +118,7 @@ Players.OnPlayerConnected.Add(function(p) {
     p.Properties.Add('Deaths', 0);
     p.Properties.Add('Scores', 0);
     p.Properties.Add('Role', 'Крестьянин');
-    p.Properties.Add('Kingdom', '');
+    p.Properties.Add('Kingdom', '-');
     p.Properties.Add('Bounty', 0);
     p.Properties.Add('LastDamager', null);
     
@@ -136,13 +137,15 @@ Players.OnPlayerConnected.Add(function(p) {
             RedTeam.Add(p);
         }
     }
-    p.Spawns.Spawn();
     
     p.Properties.Get('Kingdom').Value = p.Team.displayName;
     p.Ui.Hint.Value = 'Добро пожаловать в Битву Королевств!';
+    p.Spawns.Spawn();
 });
 
 Teams.OnRequestJoinTeam.Add(function(p, t) {
+    p.Properties.Get('RoomID').Value = p.IdInRoom;
+    p.Spawns.Spawn();
     t.Add(p);
     p.Properties.Get('Kingdom').Value = t.displayName;
     
@@ -152,10 +155,10 @@ Teams.OnRequestJoinTeam.Add(function(p, t) {
     } else if (t.name === 'RedKingdom' && !Kings.Red) {
         AssignKing(RedTeam, p);
     }
-    p.Spawns.Spawn();
 });
 
 Teams.OnPlayerChangeTeam.Add(function(p, oldTeam, newTeam) {
+    p.Spawns.Spawn();
     if (oldTeam) {
         // Снимаем корону при смене команды
         if (p.id === Kings[oldTeam.name === 'BlueKingdom' ? 'Blue' : 'Red']) {
@@ -166,7 +169,6 @@ Teams.OnPlayerChangeTeam.Add(function(p, oldTeam, newTeam) {
     }
     
     newTeam.Add(p);
-    p.Spawns.Spawn();
     p.Properties.Get('Kingdom').Value = newTeam.displayName;
     
     // Назначаем короля, если нужно
