@@ -20,40 +20,53 @@ const tutorialZones = [
         name: "Основы", 
         position: new Vector3(-20, 5, 0),
         size: new Vector3(10, 10, 10),
-        color: new Color(1, 1, 1, 0.3)
+        color: new Color(1, 1, 1, 0.3),
+        tag: "basics"
     },
     { 
         name: "Фундамент", 
         position: new Vector3(0, 5, 0),
         size: new Vector3(10, 10, 10),
-        color: new Color(0.8, 0.5, 0.2, 0.3)
+        color: new Color(0.8, 0.5, 0.2, 0.3),
+        tag: "foundation"
     },
     { 
         name: "Симметрия", 
         position: new Vector3(20, 5, 0),
         size: new Vector3(10, 10, 10),
-        color: new Color(0.2, 0.5, 0.8, 0.3)
+        color: new Color(0.2, 0.5, 0.8, 0.3),
+        tag: "symmetry"
     },
     { 
         name: "Окна и двери", 
         position: new Vector3(40, 5, 0),
         size: new Vector3(10, 10, 10),
-        color: new Color(0.8, 0.2, 0.8, 0.3)
+        color: new Color(0.8, 0.2, 0.8, 0.3),
+        tag: "windows"
     },
     { 
         name: "Крыши", 
         position: new Vector3(60, 5, 0),
         size: new Vector3(10, 10, 10),
-        color: new Color(0.5, 0.8, 0.5, 0.3)
+        color: new Color(0.5, 0.8, 0.5, 0.3),
+        tag: "roofs"
     }
 ];
 
-// Создаем триггерные зоны
+// Создаем триггерные зоны с новым форматом
 tutorialZones.forEach(zone => {
     const area = AreaService.CreateBox(zone.position, zone.size);
-    AreaViewService.Create(area, zone.color, zone.name);
     
-    AreaPlayerTriggerService.Create(area).OnEnter.Add((player) => {
+    const zoneView = AreaViewService.GetContext().Get(zone.tag);
+    zoneView.Tags = [zone.tag];
+    zoneView.Color = zone.color;
+    zoneView.Enable = true;
+    
+    const zoneTrigger = AreaPlayerTriggerService.Get(zone.tag);
+    zoneTrigger.Tags = [zone.tag];
+    zoneTrigger.Enable = true;
+    
+    zoneTrigger.OnEnter.Add((player) => {
         showTutorialStep(player, zone.name);
     });
 });
