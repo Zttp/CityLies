@@ -4,15 +4,9 @@ import { Game, Map, MapEditor, Players, Inventory, LeaderBoard, BuildBlocksSet, 
 // Отключаем команды и урон
 Teams.Add('Builders', 'Строители', new Color(0.2, 0.8, 0.2, 0.5));
 const BuildersTeam = Teams.Get('Builders');
+BuildersTeam.Spawns.SpawnPointsGroups.Add(1);
+BuildersTeam.Build.BlocksSet.Value = BuildBlocksSet.AllClear;
 Damage.Enable.Value = false;
-
-// Настройки строительства
-BuildersTeam.Build.BlocksSet.Value = BuildBlocksSet.White;
-Build.Enable.Value = true;
-Build.Infinity.Value = true;
-
-// Очищаем карту
-Map.Clear();
 
 // Создаем учебные зоны
 const tutorialZones = [
@@ -149,10 +143,10 @@ Players.OnPlayerConnected.Add(function(player) {
     player.Properties.Add('TutorialStep', 0);
     
     // Даем строительные инструменты
-    player.inventory.Main.Value = false;
-    player.inventory.Secondary.Value = false;
-    player.inventory.Melee.Value = true;
-    player.spawns.spawn();
+    player.Inventory.Main.Value = false;
+    player.Inventory.Secondary.Value = false;
+    player.Inventory.Melee.Value = true;
+    player.Spawns.Spawn();
     
     // Первое сообщение
     player.Ui.Hint.Value = `
