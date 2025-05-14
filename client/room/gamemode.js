@@ -1,10 +1,6 @@
 import { DisplayValueHeader, Color, Vector3 } from 'pixel_combats/basic';
 import { Game, Map, MapEditor, Players, Inventory, LeaderBoard, BuildBlocksSet, Teams, Damage, BreackGraph, Ui, Properties, GameMode, Spawns, Timers, TeamsBalancer, Build, AreaService, AreaPlayerTriggerService, AreaViewService, Chat } from 'pixel_combats/room';
 
-// Настройка режима
-GameMode.Name.Value = "Туториал по строительству";
-GameMode.Description.Value = "Обучающий режим по основам строительства в Pixel Combats 2";
-
 // Отключаем команды и урон
 Teams.Add('Builders', 'Строители', new Color(0.2, 0.8, 0.2, 0.5));
 const BuildersTeam = Teams.Get('Builders');
