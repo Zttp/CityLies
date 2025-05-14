@@ -138,7 +138,8 @@ Players.OnPlayerConnected.Add(function(player) {
     // Даем строительные инструменты
     player.inventory.Main.Value = false;
     player.inventory.Secondary.Value = false;
-    player.inventory.Build.Value = true;
+    player.inventory.Melee.Value = true;
+    player.spawns.spawn();
     
     // Первое сообщение
     player.Ui.Hint.Value = `
